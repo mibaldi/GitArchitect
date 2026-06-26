@@ -56,6 +56,24 @@ def version() -> None:
 
 
 @app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
+    port: int = typer.Option(8000, "--port", help="Bind port"),
+) -> None:
+    """Run the REST API (requires the 'api' extra)."""
+    try:
+        import uvicorn
+    except ModuleNotFoundError as exc:
+        typer.secho(
+            "The API requires the 'api' extra: pip install 'codebase-architect[api]'",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+    uvicorn.run("codebase_architect.api.app:create_app", host=host, port=port, factory=True)
+
+
+@app.command()
 def scan(
     location: str = typer.Argument(
         ..., help="Git URL, local folder, local Git repo, .zip or .tar.gz"

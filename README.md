@@ -14,6 +14,18 @@ architect scan <source> --out ./docs-output
 `<source>` can be a remote Git repo, a local Git repo, a folder, a `.zip` or a
 `.tar.gz`.
 
+It also exposes a REST API (the `api` extra):
+
+```
+architect serve --port 8000
+# POST /scans {"location": "...", "static_only": true}  -> 202 {id, status}
+# GET  /scans/{id}                  scan status + summary
+# GET  /scans/{id}/documentation    generated pages
+# GET  /scans/{id}/download         documentation bundle as a .zip
+```
+
+Scans run asynchronously; poll the status endpoint until it reports `done`.
+
 ## How it works
 
 A single scan runs a pipeline:

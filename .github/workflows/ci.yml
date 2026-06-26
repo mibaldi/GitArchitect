@@ -24,7 +24,7 @@ jobs:
       - name: Create venv and install
         run: |
           uv venv --python 3.11 .venv
-          uv pip install --python .venv/bin/python -e '.[dev,cli]'
+          uv pip install --python .venv/bin/python -e '.[dev,cli,api]'
 
       - name: Lint (ruff)
         run: .venv/bin/ruff check src tests
