@@ -17,6 +17,7 @@ from codebase_architect.domain.model.documentation import (
 )
 from codebase_architect.domain.model.entrypoint import Entrypoint
 from codebase_architect.domain.model.module import ModuleEdge, ModuleGraph
+from codebase_architect.domain.model.narrative import NarrativeReport
 
 # Caps keep generated diagrams readable on large codebases.
 _MAX_GRAPH_NODES = 60
@@ -32,13 +33,15 @@ def build_documentation(
     graph: ModuleGraph,
     architecture: Architecture,
     entrypoints: list[Entrypoint],
+    narrative: NarrativeReport | None = None,
 ) -> Documentation:
     pages = (
-        _overview_page(title, generated_at, base_ref, model),
+        _overview_page(title, generated_at, base_ref, model, narrative),
         _architecture_page(architecture, graph),
         _modules_page(graph),
+        _features_page(narrative),
         _entrypoints_page(entrypoints),
-        _flows_page(entrypoints, graph),
+        _flows_page(entrypoints, graph, narrative),
         _dependencies_page(model),
     )
     return Documentation(
@@ -47,12 +50,20 @@ def build_documentation(
 
 
 def _overview_page(
-    title: str, generated_at: str, base_ref: str | None, model: CodeModel
+    title: str,
+    generated_at: str,
+    base_ref: str | None,
+    model: CodeModel,
+    narrative: NarrativeReport | None,
 ) -> DocPage:
     meta = f"_Generated at {generated_at}"
     if base_ref:
         meta += f" · base ref `{base_ref[:12]}`"
     meta += "._"
+
+    sections: list[DocSection] = [DocSection(body=meta)]
+    if narrative and narrative.overview:
+        sections.append(DocSection(heading="Overview", body=narrative.overview))
 
     lang_rows = [
         f"| {s.language.value} | {s.files} | {s.loc} |" for s in model.language_breakdown()
@@ -71,15 +82,35 @@ def _overview_page(
         f"- Dependencies: **{len(model.dependencies)}**"
     )
 
+    sections.append(DocSection(heading="Languages", body=languages))
+    sections.append(DocSection(heading="Technology stack", body=stacks))
+    sections.append(DocSection(heading="Totals", body=totals))
+    return DocPage(slug="README", title=title, sections=tuple(sections))
+
+
+def _features_page(narrative: NarrativeReport | None) -> DocPage:
+    if narrative is None:
+        body = (
+            "_AI narrative was not run (static-only scan). Re-run without "
+            "`--static-only` and with an AI provider configured to generate the "
+            "functionality catalog._"
+        )
+    elif not narrative.features:
+        body = "_No features were derived._"
+    else:
+        chunks: list[str] = []
+        for feature in narrative.features:
+            chunks.append(f"### {feature.name}")
+            chunks.append(feature.description)
+            if feature.related:
+                refs = ", ".join(f"`{r}`" for r in feature.related)
+                chunks.append(f"_Related: {refs}_")
+            chunks.append("")
+        body = "\n".join(chunks).strip()
     return DocPage(
-        slug="README",
-        title=title,
-        sections=(
-            DocSection(body=meta),
-            DocSection(heading="Languages", body=languages),
-            DocSection(heading="Technology stack", body=stacks),
-            DocSection(heading="Totals", body=totals),
-        ),
+        slug="features",
+        title="Functionalities",
+        sections=(DocSection(heading="Features", body=body),),
     )
 
 
@@ -142,28 +173,37 @@ def _entrypoints_page(entrypoints: list[Entrypoint]) -> DocPage:
         body = "\n".join(chunks).strip()
     return DocPage(
         slug="entrypoints",
-        title="Functionalities & entrypoints",
+        title="Entrypoints",
         sections=(DocSection(heading="Entrypoints", body=body),),
     )
 
 
-def _flows_page(entrypoints: list[Entrypoint], graph: ModuleGraph) -> DocPage:
+def _flows_page(
+    entrypoints: list[Entrypoint],
+    graph: ModuleGraph,
+    narrative: NarrativeReport | None,
+) -> DocPage:
     sections: list[DocSection] = [
         DocSection(
-            body="Static flows derived from entrypoints and their module "
-            "dependencies. Narrative descriptions are added by the AI pass."
+            body="Flows derived from entrypoints and their module dependencies."
         )
     ]
+    flow_text = narrative.flows if narrative else {}
     shown = 0
     for ep in entrypoints:
         if shown >= _MAX_FLOWS:
             break
         deps = graph.dependencies_of(ep.module)
-        if not deps:
+        description = flow_text.get(ep.name, "")
+        if not deps and not description:
             continue
-        diagram = _flow_diagram(ep, deps)
+        diagram = _flow_diagram(ep, deps) if deps else None
         sections.append(
-            DocSection(heading=f"{ep.name} ({ep.kind.value})", diagram=diagram)
+            DocSection(
+                heading=f"{ep.name} ({ep.kind.value})",
+                body=description,
+                diagram=diagram,
+            )
         )
         shown += 1
     if shown == 0:

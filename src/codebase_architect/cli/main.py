@@ -23,6 +23,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised only without 
     ) from exc
 
 from codebase_architect.application.pipeline.scan_pipeline import ScanPipeline, ScanResult
+from codebase_architect.application.registries.ai_registry import build_ai_provider
 from codebase_architect.application.registries.source_resolver import SourceProviderResolver
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
@@ -65,14 +66,29 @@ def scan(
     title: str | None = typer.Option(
         None, "--title", "-t", help="Project title for the documentation"
     ),
+    static_only: bool = typer.Option(
+        False, "--static-only", help="Skip the AI narrative pass (deterministic output only)"
+    ),
+    ai_provider: str | None = typer.Option(
+        None, "--ai-provider", help="AI provider for the narrative (default: from config)"
+    ),
 ) -> None:
     """Scan a codebase and generate clean documentation.
 
-    Runs the full static pipeline and prints a summary. With ``--out`` it also
-    writes a Markdown + Mermaid documentation bundle (overview, architecture,
-    modules, entrypoints, flows and dependencies).
+    Runs the full pipeline and prints a summary. With ``--out`` it also writes a
+    Markdown + Mermaid documentation bundle (overview, architecture, modules,
+    functionalities, entrypoints, flows and dependencies). The AI narrative is
+    used when a provider is configured; otherwise the scan degrades to static.
     """
     settings = get_settings()
+    use_static_only = static_only or settings.scan.static_only
+    provider = build_ai_provider(ai_provider or settings.ai.default_provider)
+    if not use_static_only and not provider.available():
+        typer.secho(
+            f"AI provider '{provider.name}' is not configured; running static-only.",
+            fg=typer.colors.YELLOW,
+        )
+
     pipeline = ScanPipeline(
         importer=ImportSourceUseCase(
             resolver=SourceProviderResolver(default_source_providers()),
@@ -85,6 +101,7 @@ def scan(
         ),
         renderer=MarkdownMermaidRenderer(),
         exporter=FolderExporter(),
+        ai_provider=provider,
     )
     try:
         result = pipeline.run(
@@ -92,6 +109,7 @@ def scan(
             project_title=title or _default_title(location),
             generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
             out_dir=out,
+            static_only=use_static_only,
         )
     except CodebaseArchitectError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
@@ -137,6 +155,15 @@ def _print_summary(result: ScanResult) -> None:
     typer.echo(f"  dependencies: {internal} internal / {external} external")
     typer.echo(f"  symbols:      {model.symbol_count}")
     typer.echo(f"  entrypoints:  {len(result.entrypoints)}")
+
+    typer.secho("\nAI narrative", fg=typer.colors.CYAN)
+    if result.narrative is not None:
+        narrative = result.narrative
+        typer.echo(f"  features:     {len(narrative.features)}")
+        typer.echo(f"  flows:        {len(narrative.flows)}")
+        typer.echo(f"  tokens:       {narrative.usage.total}")
+    else:
+        typer.echo("  (static-only; no AI narrative)")
 
     if result.bundle is not None:
         typer.secho("\nDocumentation written", fg=typer.colors.GREEN)

@@ -90,3 +90,53 @@ def test_pipeline_without_out_dir_skips_writing(tmp_path: Path) -> None:
     )
     assert result.bundle is None
     assert result.documentation.pages  # IR still built
+
+
+def test_pipeline_runs_ai_narrative_when_provider_available(tmp_path: Path) -> None:
+    from typing import ClassVar
+
+    from codebase_architect.domain.model.ai import Completion, TokenUsage
+    from codebase_architect.domain.ports.ai_provider import AIProvider
+
+    class StubProvider(AIProvider):
+        name: ClassVar[str] = "stub"
+
+        def available(self) -> bool:
+            return True
+
+        def complete(self, *, system: str, prompt: str, max_tokens: int = 4096) -> Completion:
+            return Completion(
+                text='{"overview":"A web service.","features":[{"name":"F","description":"d",'
+                '"related":[]}],"flows":[]}',
+                usage=TokenUsage(10, 20),
+            )
+
+    project = tmp_path / "project"
+    project.mkdir()
+    _spring_project(project)
+    pipeline = ScanPipeline(
+        importer=ImportSourceUseCase(
+            resolver=SourceProviderResolver(default_source_providers()),
+            workspaces_dir=tmp_path / "ws",
+        ),
+        model_builder=BuildCodeModelUseCase(
+            language_detector=ExtensionLanguageDetector(),
+            parser=TreeSitterParser(),
+            manifest_detector=CompositeManifestDetector(),
+        ),
+        renderer=MarkdownMermaidRenderer(),
+        exporter=FolderExporter(),
+        ai_provider=StubProvider(),
+    )
+
+    with_ai = pipeline.run(
+        str(project), project_title="Demo", generated_at="t", out_dir=None, static_only=False
+    )
+    assert with_ai.narrative is not None
+    assert with_ai.narrative.overview == "A web service."
+
+    # static_only short-circuits the AI pass even when a provider is available.
+    static = pipeline.run(
+        str(project), project_title="Demo", generated_at="t", out_dir=None, static_only=True
+    )
+    assert static.narrative is None

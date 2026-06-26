@@ -11,13 +11,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
+from codebase_architect.application.use_cases.generate_narrative import GenerateNarrativeUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
 from codebase_architect.domain.model.architecture import Architecture
 from codebase_architect.domain.model.code_model import CodeModel
 from codebase_architect.domain.model.documentation import Documentation, DocumentationBundle
 from codebase_architect.domain.model.entrypoint import Entrypoint
 from codebase_architect.domain.model.module import ModuleGraph
+from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.model.workspace import Workspace
+from codebase_architect.domain.ports.ai_provider import AIProvider
 from codebase_architect.domain.ports.documentation import DocExporter, DocRenderer
 from codebase_architect.domain.services.architecture_inference import infer_architecture
 from codebase_architect.domain.services.documentation_builder import build_documentation
@@ -35,6 +38,7 @@ class ScanResult:
     architecture: Architecture
     entrypoints: list[Entrypoint]
     documentation: Documentation
+    narrative: NarrativeReport | None = None
     bundle: DocumentationBundle | None = None
 
 
@@ -47,11 +51,13 @@ class ScanPipeline:
         model_builder: BuildCodeModelUseCase,
         renderer: DocRenderer,
         exporter: DocExporter,
+        ai_provider: AIProvider | None = None,
     ) -> None:
         self._importer = importer
         self._model_builder = model_builder
         self._renderer = renderer
         self._exporter = exporter
+        self._ai_provider = ai_provider
 
     def run(
         self,
@@ -60,12 +66,16 @@ class ScanPipeline:
         project_title: str,
         generated_at: str,
         out_dir: Path | None,
+        static_only: bool = False,
     ) -> ScanResult:
         workspace = self._importer.execute(location)
         model = self._model_builder.execute(workspace)
         graph = build_module_graph(model)
         architecture = infer_architecture(graph)
         entrypoints = detect_entrypoints(model)
+
+        narrative = self._maybe_narrate(model, graph, architecture, entrypoints, static_only)
+
         documentation = build_documentation(
             title=project_title,
             generated_at=generated_at,
@@ -74,6 +84,7 @@ class ScanPipeline:
             graph=graph,
             architecture=architecture,
             entrypoints=entrypoints,
+            narrative=narrative,
         )
 
         bundle: DocumentationBundle | None = None
@@ -88,5 +99,23 @@ class ScanPipeline:
             architecture=architecture,
             entrypoints=entrypoints,
             documentation=documentation,
+            narrative=narrative,
             bundle=bundle,
+        )
+
+    def _maybe_narrate(
+        self,
+        model: CodeModel,
+        graph: ModuleGraph,
+        architecture: Architecture,
+        entrypoints: list[Entrypoint],
+        static_only: bool,
+    ) -> NarrativeReport | None:
+        if static_only or self._ai_provider is None or not self._ai_provider.available():
+            return None
+        return GenerateNarrativeUseCase(self._ai_provider).execute(
+            model=model,
+            graph=graph,
+            architecture=architecture,
+            entrypoints=entrypoints,
         )

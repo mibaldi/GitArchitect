@@ -59,7 +59,15 @@ def test_build_documentation_has_expected_pages() -> None:
         entrypoints=[],
     )
     slugs = {p.slug for p in docs.pages}
-    assert {"README", "architecture", "modules", "entrypoints", "flows", "dependencies"} == slugs
+    assert {
+        "README",
+        "architecture",
+        "modules",
+        "features",
+        "entrypoints",
+        "flows",
+        "dependencies",
+    } == slugs
 
 
 def test_render_produces_markdown_with_mermaid() -> None:
@@ -86,3 +94,47 @@ def test_determinism_same_inputs_same_output() -> None:
     a = MarkdownMermaidRenderer().render(_docs())
     b = MarkdownMermaidRenderer().render(_docs())
     assert [f.content for f in a] == [f.content for f in b]
+
+
+def test_narrative_is_woven_into_documentation() -> None:
+    from codebase_architect.domain.model.feature import Feature
+    from codebase_architect.domain.model.narrative import NarrativeReport
+
+    model = CodeModel(parsed_files=[ParsedFile("svc/S.java", Language.JAVA, 8, package="com.demo")])
+    graph = build_module_graph(model)
+    narrative = NarrativeReport(
+        overview="This service greets people.",
+        features=[Feature("Greeting", "Returns a greeting.", ("com.demo",))],
+        flows={"C": "Request flows to the service."},
+    )
+    docs = build_documentation(
+        title="Demo",
+        generated_at="t",
+        base_ref=None,
+        model=model,
+        graph=graph,
+        architecture=Architecture(),
+        entrypoints=[],
+        narrative=narrative,
+    )
+    by_slug = {p.slug: p for p in docs.pages}
+    assert "features" in by_slug
+    files = {f.path: f.content for f in MarkdownMermaidRenderer().render(docs)}
+    assert "This service greets people." in files["README.md"]
+    assert "Greeting" in files["features.md"]
+    assert "Returns a greeting." in files["features.md"]
+
+
+def test_features_page_notes_static_only_when_no_narrative() -> None:
+    docs = build_documentation(
+        title="Demo",
+        generated_at="t",
+        base_ref=None,
+        model=CodeModel(),
+        graph=build_module_graph(CodeModel()),
+        architecture=Architecture(),
+        entrypoints=[],
+        narrative=None,
+    )
+    files = {f.path: f.content for f in MarkdownMermaidRenderer().render(docs)}
+    assert "static-only" in files["features.md"]
