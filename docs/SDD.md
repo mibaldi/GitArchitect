@@ -1,25 +1,35 @@
 # Codebase Architect — Software Design Document (SDD)
 
-> Estado: **PROPUESTA DE DISEÑO — PENDIENTE DE APROBACIÓN**
-> No contiene código de implementación. Una vez aprobado, se implementará por fases con commits pequeños.
-> Autor: Arquitectura. Fecha: 2026-06-26.
+> Estado: **PROPUESTA DE DISEÑO (v2) — PENDIENTE DE APROBACIÓN**
+> No contiene implementación. Una vez aprobado, se implementa por fases con commits pequeños.
+> Reemplaza a la v1 (que modelaba un agente que *modificaba* código). Fecha: 2026-06-26.
 
 ---
 
 ## 0. Resumen ejecutivo
 
-**Codebase Architect** es un agente autónomo que analiza, planifica e implementa cambios sobre **cualquier** codebase, sin acoplarse a ningún proveedor de hosting (GitHub/GitLab/Bitbucket).
+**Codebase Architect** es una herramienta que, **lanzando un único escaneo** sobre cualquier
+codebase, genera **documentación limpia** de su **arquitectura, funcionalidades y flujos** en
+**Markdown + Mermaid**.
 
-El núcleo solo entiende abstracciones puras: `SourceProvider`, `Workspace`, `Task`, `Plan`, `Agent`, `ChangeSet`, `Review`, `Exporter`, `AIProvider`, `GitService`. Todo lo concreto (un repo Git, un zip, Claude, OpenAI, un PR de GitHub) vive como **adaptador/plugin** en la periferia.
+Es una herramienta de **solo lectura / comprensión de código**: nunca modifica el proyecto
+analizado. No abre PRs, no hace commits, no edita ficheros del codebase.
 
-Principio rector: **el código fuente es solo bytes en un Workspace**. Da igual si vino de un `git clone`, de un `.zip` o de una carpeta. Git es una *capacidad opcional* del workspace, no un requisito.
+Decisiones aprobadas:
+- **Salida:** Markdown + diagramas Mermaid (versionable en el propio repo). El modelo de
+  documentación es agnóstico del renderer, dejando la puerta a un sitio HTML estático como
+  renderer/plugin futuro.
+- **Análisis híbrido:** una fase **estática/determinista** (lenguajes, manifiestos, módulos,
+  dependencias, grafos, entrypoints) y una fase **de IA** que redacta funcionalidades y flujos
+  en lenguaje natural, **anclada a los hechos estáticos** para minimizar alucinaciones.
+- **Entrada multi-fuente:** git remoto, git local, carpeta, `.zip`, `.tar.gz`.
+- **No acoplado** a GitHub/GitLab/Bitbucket ni a un proveedor de IA concreto.
 
-Decisiones clave:
-- **Arquitectura hexagonal** (puertos y adaptadores) estricta.
-- **Stack: Python 3.12** (FastAPI + Typer + Arq + SQLAlchemy/Postgres). Justificación en §3.
-- **Plugins descubiertos por entry points**, aislados del núcleo por contrato.
-- **AIProvider** desacoplado: Claude, OpenAI, Gemini, OpenRouter, Local son adaptadores intercambiables.
-- **Workspaces aislados y efímeros** por ejecución; cada cambio se materializa como `ChangeSet` exportable a patch/zip/rama/PR.
+El corazón del sistema es un **pipeline de escaneo**:
+
+```
+scan = import → discover → parse → model → infer → narrate(IA) → render(MD+Mermaid) → write
+```
 
 ---
 
@@ -29,56 +39,48 @@ Decisiones clave:
 
 | ID | Requisito | Prioridad |
 |----|-----------|-----------|
-| RF-01 | Importar proyecto desde repo Git remoto | Must |
-| RF-02 | Importar desde repo Git local | Must |
-| RF-03 | Importar desde carpeta local | Must |
-| RF-04 | Importar desde `.zip` | Must |
-| RF-05 | Importar desde `.tar.gz` | Must |
-| RF-06 | Crear un Workspace aislado por importación/ejecución | Must |
-| RF-07 | Analizar arquitectura (detectar capas, módulos, dependencias) | Must |
-| RF-08 | Detectar tecnologías, frameworks y lenguajes | Must |
-| RF-09 | Leer y resumir documentación existente (README, /docs, ADRs) | Should |
-| RF-10 | Generar un *project map* (mapa estructural navegable) | Must |
-| RF-11 | Recibir tarea en lenguaje natural | Must |
-| RF-12 | Generar un plan de implementación estructurado | Must |
-| RF-13 | Ejecutar agentes especializados sobre el plan | Must |
-| RF-14 | Modificar el código dentro del Workspace | Must |
-| RF-15 | Ejecutar tests / comandos de verificación | Should |
-| RF-16 | Generar diff/ChangeSet del trabajo realizado | Must |
-| RF-17 | Crear commits si el origen es Git | Must |
-| RF-18 | Exportar resultado como patch, zip o rama | Must |
-| RF-19 | Abrir PR/MR solo si hay plugin de hosting configurado | Could |
-| RF-20 | Consultar estado de proyectos, tareas y ejecuciones | Must |
-| RF-21 | Revisar y aprobar/rechazar cambios (human-in-the-loop) | Should |
-| RF-22 | API REST y CLI equivalentes funcionalmente | Must |
-| RF-23 | Persistir proyectos, fuentes, workspaces, análisis, tareas, planes, ejecuciones, cambios, logs, métricas y configuración | Must |
-| RF-24 | Sistema de agentes extensible (registro/plug de nuevos agentes) | Must |
-| RF-25 | AIProvider intercambiable en runtime/config | Must |
+| RF-01 | Importar codebase desde git remoto, git local, carpeta, `.zip`, `.tar.gz` | Must |
+| RF-02 | Materializar la fuente en un Workspace **de solo lectura** y aislado | Must |
+| RF-03 | Detectar lenguajes, gestores de paquetes, frameworks y manifiestos | Must |
+| RF-04 | Parsear el código (multi-lenguaje) y extraer símbolos (clases, funciones, módulos) | Must |
+| RF-05 | Construir el grafo de módulos internos y el de dependencias externas | Must |
+| RF-06 | Detectar entrypoints (main, rutas HTTP, comandos CLI, jobs) | Should |
+| RF-07 | Inferir arquitectura: capas, componentes y sus relaciones | Must |
+| RF-08 | Leer y resumir documentación existente (README, /docs, ADRs) | Should |
+| RF-09 | Catalogar **funcionalidades** del sistema en lenguaje natural (IA) | Must |
+| RF-10 | Extraer y describir **flujos** (secuencias/cadenas de llamadas) | Must |
+| RF-11 | Generar documentación en **Markdown + Mermaid** (arquitectura, módulos, deps, features, flujos) | Must |
+| RF-12 | Escribir el bundle de docs a carpeta y/o `.zip` | Must |
+| RF-13 | Ejecutar todo con **un solo comando** (`architect scan <fuente>`) | Must |
+| RF-14 | Permitir análisis **solo estático** (sin IA) de forma degradada | Should |
+| RF-15 | Consultar estado de un escaneo y descargar su resultado (API) | Must |
+| RF-16 | AIProvider intercambiable (Claude/OpenAI/Gemini/OpenRouter/Local) | Must |
+| RF-17 | Re-escanear un proyecto y regenerar documentación (idempotente) | Should |
 
 ### 1.2 Requisitos no funcionales (RNF)
 
 | ID | Requisito |
 |----|-----------|
-| RNF-01 | **Desacoplamiento**: el dominio no importa nada de infraestructura ni de hosting. Verificable con tests de arquitectura (import-linter). |
-| RNF-02 | **Extensibilidad**: añadir un SourceProvider/Exporter/Agent/AIProvider no requiere tocar el núcleo. |
-| RNF-03 | **Aislamiento y seguridad**: el código importado es *no confiable*; ejecución de tests en sandbox. |
-| RNF-04 | **Idempotencia/reanudabilidad** de ejecuciones largas (workers, reintentos). |
-| RNF-05 | **Observabilidad**: logs estructurados, métricas (tokens, coste, duración), trazas por ejecución. |
-| RNF-06 | **Determinismo de artefactos**: un ChangeSet siempre puede reexportarse a cualquier formato. |
-| RNF-07 | **Portabilidad**: funciona sin Git instalado para fuentes no-Git. |
-| RNF-08 | **Coste controlado**: límites de tokens/coste por tarea, presupuesto configurable. |
-| RNF-09 | **Multi-tenant ready** (aislar datos por proyecto/usuario), aunque MVP sea single-tenant. |
+| RNF-01 | **Solo lectura**: nunca se escribe sobre el codebase analizado. |
+| RNF-02 | **Desacoplamiento**: el dominio no conoce IA, git hosting ni el formato de salida (verificado por import-linter). |
+| RNF-03 | **Extensibilidad**: añadir un SourceProvider, un analizador, un AIProvider o un renderer no toca el núcleo. |
+| RNF-04 | **Escalabilidad de contexto**: la IA trabaja por *map-reduce* sobre el modelo estático; no se vuelca todo el repo al prompt. |
+| RNF-05 | **Reproducibilidad**: la fase estática es determinista; la documentación incluye qué se infirió vs qué redactó la IA. |
+| RNF-06 | **Coste controlado**: presupuesto de tokens por escaneo; caché de resúmenes. |
+| RNF-07 | **Portabilidad/degradación**: funciona sin git (para zip/carpeta) y sin IA (modo estático). |
+| RNF-08 | **Observabilidad**: logs estructurados, métricas (ficheros, módulos, tokens, duración). |
+| RNF-09 | **Multi-lenguaje** con cobertura incremental por adaptadores (tree-sitter). |
 
-### 1.3 Fuera de alcance (MVP)
-- UI web propia (se consume vía API).
-- Ejecución distribuida multi-nodo (se diseña, no se implementa en fase 1).
-- Plugins de hosting reales (solo se prepara el contrato; GitHub llega como plugin posterior).
+### 1.3 Fuera de alcance
+- Modificar/refactorizar el código analizado, generar parches, abrir PRs, ejecutar tests del proyecto.
+- UI web propia (se consume por CLI/API; el HTML estático es un renderer futuro).
+- Análisis dinámico en runtime (solo análisis estático + IA sobre el código).
 
 ### 1.4 Actores
-- **Usuario/Dev** (vía CLI o API).
-- **Orquestador** (Application services).
-- **Agentes IA** (autónomos, supervisados).
-- **Sistemas externos opcionales**: proveedores de IA, hosting Git (plugins).
+- **Dev/Usuario** que lanza un escaneo (CLI o API).
+- **Pipeline de escaneo** (orquestación).
+- **Proveedor de IA** (opcional, para la narrativa).
+- **Sistemas externos opcionales** (plugins futuros: publicar docs en wiki/Confluence).
 
 ---
 
@@ -86,131 +88,121 @@ Decisiones clave:
 
 | ID | Riesgo | Impacto | Prob. | Mitigación |
 |----|--------|---------|-------|------------|
-| R-01 | Ejecutar código/tests de un repo no confiable compromete el host | Alto | Media | Sandbox (contenedor efímero, sin red, FS limitado, timeouts, ulimits). Ejecución desactivable. |
-| R-02 | Acoplamiento accidental del núcleo a Git/hosting/IA | Alto | Media | Arquitectura hexagonal + import-linter en CI + revisión de PRs. |
-| R-03 | Costes de IA descontrolados | Alto | Alta | Presupuesto por tarea, contadores de tokens, caché de prompts, modelos por capacidad. |
-| R-04 | Cambios del agente que rompen el build silenciosamente | Alto | Alta | Gate de verificación (tests/lint) antes de aceptar ChangeSet; ReviewAgent + aprobación humana. |
-| R-05 | Análisis poco fiable en codebases enormes (límite de contexto) | Medio | Alta | Análisis incremental/jerárquico, RAG sobre el código, mapa por módulos, chunking. |
-| R-06 | Pérdida de trabajo por workspaces efímeros | Medio | Media | Persistir ChangeSet/patch antes de limpiar workspace; export atómico. |
-| R-07 | Diferencias entre ecosistemas (JVM/Gradle vs npm vs CocoaPods…) | Medio | Alta | Detectores por ecosistema como adaptadores; degradar con elegancia si falta toolchain. |
-| R-08 | Diff/merge conflictivos al reexportar a Git | Medio | Media | Generar patch contra el commit base capturado en import; 3-way merge controlado. |
-| R-09 | Lock-in a un proveedor de IA | Medio | Media | Puerto `AIProvider` + capacidades declarativas; tests de contrato por adaptador. |
-| R-10 | Crecimiento descontrolado de plugins de baja calidad | Bajo | Media | Contrato versionado de plugin + suite de conformidad obligatoria. |
-| R-11 | Datos sensibles/secretos en el código importado | Alto | Media | Scan de secretos en import; no enviar a IA sin redacción configurable. |
-| R-12 | Ejecuciones largas que exceden timeouts HTTP | Medio | Alta | Modelo asíncrono: API encola, workers ejecutan, estado por polling/eventos. |
+| R-01 | La IA **alucina** funcionalidades/flujos inexistentes | Alto | Alta | Anclar la IA a hechos estáticos (símbolos, grafos reales); citar ficheros/símbolos; marcar secciones "inferidas". |
+| R-02 | Inferencia de arquitectura **poco fiable** | Alto | Alta | Heurísticas explicables (estructura de carpetas + clustering de dependencias) revisables; mostrar evidencia. |
+| R-03 | Repos enormes exceden el contexto de la IA | Medio | Alta | Map-reduce jerárquico por módulo; resumen incremental; límites configurables. |
+| R-04 | Cobertura desigual entre lenguajes/frameworks | Medio | Alta | Analizadores por lenguaje como adaptadores; degradar a métricas genéricas si falta soporte. |
+| R-05 | Coste de IA descontrolado en repos grandes | Alto | Media | Presupuesto por escaneo, caché por hash de fichero/módulo, modo solo-estático. |
+| R-06 | Secretos del código enviados a la IA | Alto | Media | Scan de secretos + redacción antes de enviar; opción de no enviar contenido sensible. |
+| R-07 | Acoplamiento accidental del núcleo a IA/hosting/formato | Alto | Media | Hexagonal + import-linter en CI (bloqueante). |
+| R-08 | Documentación que queda desactualizada | Medio | Alta | Re-escaneo idempotente; registrar `base_ref`/commit y fecha en la doc generada. |
+| R-09 | Escaneos largos exceden timeouts HTTP | Medio | Media | API asíncrona: encola escaneo, workers ejecutan, estado por polling/eventos. |
 
 ---
 
 ## 3. Propuesta de stack
 
-### 3.1 Lenguaje del núcleo: **Python 3.12**
+### 3.1 Lenguaje del núcleo: **Python 3.11+**
 
-Razones:
-- Ecosistema IA de primera (SDKs oficiales Anthropic/OpenAI/Google, OpenRouter HTTP, llama.cpp/Ollama local).
-- Modelado de dominio expresivo con `dataclasses`/Pydantic.
-- FastAPI (API), Typer (CLI), Arq/Celery (workers) maduros.
-- Tooling de tests de arquitectura (import-linter) para garantizar el hexágono.
-
-Alternativa considerada: **TypeScript/Node** (buen tooling, SDKs IA decentes) — descartada como núcleo por menor madurez de workers/datos; queda como opción para SDK cliente.
+Razones: ecosistema IA de primera (SDKs Anthropic/OpenAI/Google, OpenRouter, local), bindings
+**tree-sitter** multi-lenguaje, FastAPI/Typer/Arq maduros, modelado expresivo y tests de
+arquitectura (import-linter).
 
 ### 3.2 Stack por capa
 
 | Capa | Tecnología | Notas |
 |------|-----------|-------|
-| Lenguaje | Python 3.12 | tipado estricto (mypy) |
-| Dominio | dataclasses puras + Pydantic v2 (DTOs en bordes) | sin dependencias de infra |
-| API | FastAPI + Uvicorn | OpenAPI auto, async |
-| CLI | Typer (Click) + Rich | salida legible |
-| Workers | Arq (Redis) | colas async; Celery como alternativa |
-| Cola/Broker | Redis | jobs + pub/sub de eventos |
-| Persistencia | PostgreSQL + SQLAlchemy 2.0 + Alembic | JSONB para análisis/planes |
-| Object storage | FS local (MVP) → S3-compatible | artefactos: zips, patches, logs |
-| IA | SDKs por adaptador | Claude/OpenAI/Gemini/OpenRouter/Local |
-| Git | `pygit2` (libgit2) o CLI `git` vía adaptador | opcional |
-| Análisis código | tree-sitter (multi-lenguaje) + detectores por manifiesto | AST ligero |
-| Sandbox | Docker / contenedor efímero | ejecución de tests aislada |
-| Plugins | `importlib.metadata` entry points | descubrimiento dinámico |
-| Config | Pydantic Settings (env + archivo) | 12-factor |
-| Observabilidad | structlog + OpenTelemetry + Prometheus | logs/trazas/métricas |
-| Tests | pytest + import-linter + testcontainers | unit/contract/arch/e2e |
-| Empaquetado | uv/pip + pyproject + Docker | mono-repo Python |
+| Lenguaje | Python 3.11+ (mypy strict) | |
+| Dominio | dataclasses puras + Pydantic v2 en bordes | sin dependencias de infra |
+| Análisis estático | **tree-sitter** (multi-lenguaje) + detectores de manifiestos | AST ligero, grafos |
+| IA (narrativa) | SDKs por adaptador | Claude/OpenAI/Gemini/OpenRouter/Local |
+| Render | Plantillas Markdown + generador de Mermaid | modelo de doc agnóstico del renderer |
+| CLI | Typer + Rich | comando `scan` one-shot |
+| API | FastAPI + Uvicorn | escaneos async |
+| Workers | Arq (Redis) | escaneos largos |
+| Persistencia | PostgreSQL + SQLAlchemy 2.0 + Alembic (JSONB) | scans, modelos, métricas |
+| Object store | FS local (MVP) → S3-compatible | bundles de docs, logs |
+| Git (opcional) | `pygit2`/CLI vía adaptador | solo clone/checkout/metadata para importar |
+| Sniffing fuente | magic bytes + esquema URL | elegir SourceProvider |
+| Plugins | entry points (`importlib.metadata`) | renderers, analizadores, publishers |
+| Config | Pydantic Settings | 12-factor |
+| Observabilidad | structlog + OpenTelemetry/Prometheus | |
+| Tests | pytest + import-linter + (testcontainers en integración) | unit/contract/arch |
 
-### 3.3 Capacidades opcionales degradables
-- Sin Git instalado → fuentes Git remotas/locales se deshabilitan, el resto funciona.
-- Sin Docker → ejecución de tests deshabilitada (solo análisis y diff).
-- Sin plugin de hosting → export limitado a patch/zip/rama local.
+### 3.3 Capacidades degradables
+- Sin git → fuentes git deshabilitadas; carpeta/zip/tar.gz funcionan.
+- Sin IA/API key → modo **solo estático** (arquitectura, módulos, deps, grafos; sin narrativa).
+- Sin Postgres/Redis → modo CLI one-shot con persistencia en ficheros (MVP local).
 
 ---
 
-## 4. Arquitectura completa (hexagonal)
+## 4. Arquitectura (hexagonal)
 
-### 4.1 Capas y reglas de dependencia
+### 4.1 Capas y regla de dependencia
 
 ```
-            ┌──────────────────────────────────────────────┐
-            │                  DRIVERS (in)                 │
-            │   API (FastAPI)   CLI (Typer)   Workers       │
-            └───────────────┬──────────────────────────────┘
-                            │ llaman casos de uso
-            ┌───────────────▼──────────────────────────────┐
-            │               APPLICATION                     │
-            │  Use cases / Orchestrators / Ports (in/out)   │
-            └───────────────┬──────────────────────────────┘
-                            │ usa solo Domain + Ports
-            ┌───────────────▼──────────────────────────────┐
-            │                 DOMAIN                         │
-            │  Entities · Value Objects · Domain Services    │
-            │  Ports (interfaces): SourceProvider, Workspace,│
-            │  AIProvider, GitService, Exporter, Agent, Repo │
-            └───────────────▲──────────────────────────────┘
-                            │ implementan puertos
-            ┌───────────────┴──────────────────────────────┐
-            │             INFRASTRUCTURE (out)              │
-            │ Git, FS, Zip, TarGz, DB repos, AI SDKs,       │
-            │ Sandbox, ObjectStore, tree-sitter analyzers   │
-            └───────────────┬──────────────────────────────┘
-                            │ contrato de plugin
-            ┌───────────────▼──────────────────────────────┐
-            │                  PLUGINS                       │
-            │ GitHub / GitLab / Bitbucket exporters, etc.   │
-            └──────────────────────────────────────────────┘
-                  SHARED: config, logging, errors, ids, types
+        ┌──────────────────────────────────────────────┐
+        │                  DRIVERS (in)                 │
+        │      CLI (Typer)   API (FastAPI)   Workers     │
+        └───────────────┬──────────────────────────────┘
+        ┌───────────────▼──────────────────────────────┐
+        │               APPLICATION                     │
+        │  ScanPipeline / Use cases / Registries        │
+        └───────────────┬──────────────────────────────┘
+        ┌───────────────▼──────────────────────────────┐
+        │                 DOMAIN                         │
+        │  Model (CodeModel, Architecture, Feature,     │
+        │  Flow, Documentation) · Ports · Services       │
+        └───────────────▲──────────────────────────────┘
+        ┌───────────────┴──────────────────────────────┐
+        │             INFRASTRUCTURE (out)              │
+        │ SourceProviders · Parsers(tree-sitter) ·      │
+        │ Detectors · AIProviders · Renderers ·         │
+        │ Exporters · Repos · ObjectStore               │
+        └───────────────┬──────────────────────────────┘
+        ┌───────────────▼──────────────────────────────┐
+        │                  PLUGINS                       │
+        │ HTML site renderer · Wiki/Confluence publisher │
+        │ · analizadores específicos de framework        │
+        └──────────────────────────────────────────────┘
+            SHARED: config, logging, errors, ids, types
 ```
 
-**Regla de oro:** las dependencias apuntan **hacia dentro**. `Domain` no importa nada de `Application`/`Infrastructure`/`API`. `Infrastructure` implementa puertos definidos en `Domain`. Validado por **import-linter** en CI.
+**Regla de oro:** dependencias hacia dentro. `Domain` no importa IA, formato de salida ni
+hosting. Verificado con **import-linter** en CI.
 
-### 4.2 Puertos principales (interfaces del dominio)
+### 4.2 Puertos del dominio
 
 ```text
-SourceProvider        : fetch(SourceLocation) -> Workspace
-Workspace             : root_path, has_git, read/write/list, snapshot(), cleanup()
-Analyzer (port)       : analyze(Workspace) -> Analysis
-AIProvider            : complete(prompt, opts) / chat(messages) ; capabilities()
-GitService            : clone, status, diff, branch, checkout, commit, merge, push  (opcional)
-Agent                 : id, capabilities, execute(AgentContext) -> AgentResult
-Planner (port)        : plan(Task, Analysis) -> Plan
-Exporter              : export(ChangeSet, target) -> Artifact
-SandboxRunner (port)  : run(command, Workspace) -> ExecutionResult
-SecretScanner (port)  : scan(Workspace) -> list[Finding]
-Repository<T> (ports) : persistencia por agregado
-EventBus (port)       : publish/subscribe (estado de ejecuciones)
+SourceProvider     : supports(loc) ; fetch(loc) -> Workspace   (read-only)
+Workspace          : root_path, has_git, read(), list(glob), checksum()
+LanguageDetector   : detect(Workspace) -> [Language]
+ManifestDetector   : detect(Workspace) -> [TechStack/Dependency]
+CodeParser         : parse(file) -> ParsedFile (symbols, imports)   # tree-sitter por lenguaje
+ArchitectureInferencer : infer(CodeModel) -> Architecture           # heurística, IA opcional
+FlowExtractor      : extract(CodeModel) -> [Flow]
+AIProvider         : capabilities() ; chat(messages) -> Completion(+TokenUsage)
+DocRenderer        : render(Documentation) -> [RenderedArtifact]     # Markdown+Mermaid
+DocExporter        : export(bundle, target) -> Artifact              # folder | zip
+Repository<T>      : persistencia por agregado
+EventBus           : publish/subscribe (estado de escaneo)
 ```
 
-### 4.3 Adaptadores (infraestructura) que implementan los puertos
+### 4.3 Adaptadores (infraestructura)
 
 | Puerto | Adaptadores |
 |--------|-------------|
 | SourceProvider | `GitRemoteSourceProvider`, `LocalGitSourceProvider`, `LocalFolderSourceProvider`, `ZipSourceProvider`, `TarGzSourceProvider` |
-| Exporter | `GitCommitExporter`, `PatchExporter`, `ZipExporter`, `FolderExporter` (+ plugins: `GitHubPullRequestExporter`, `GitLabMergeRequestExporter`, `BitbucketPullRequestExporter`) |
+| CodeParser | `TreeSitterParser` (por lenguaje: py, js/ts, java/kotlin, swift, go, …) |
+| Detectors | `ManifestDetector` (npm, pip/poetry, gradle/maven, cocoapods/spm, go.mod, cargo…), `LanguageDetector` |
 | AIProvider | `ClaudeProvider`, `OpenAIProvider`, `GeminiProvider`, `OpenRouterProvider`, `LocalProvider` |
-| GitService | `LibGit2GitService` / `CliGitService` |
-| Analyzer | `TreeSitterAnalyzer`, `ManifestDetector` (npm/pip/gradle/cocoapods/go.mod…), `DocsReader` |
-| SandboxRunner | `DockerSandboxRunner`, `NullSandboxRunner` |
-| Repository | `SqlAlchemy*Repository` |
+| DocRenderer | `MarkdownMermaidRenderer` (+ futuro `HtmlSiteRenderer` como plugin) |
+| DocExporter | `FolderExporter`, `ZipExporter` |
+| Repository | `SqlAlchemy*Repository` (o `FileRepository` para modo CLI) |
 
-### 4.4 Selección de adaptadores (Factories + Registry)
-- **SourceProviderResolver**: dado un `SourceLocation` (URL git, ruta, .zip, .tar.gz) elige el provider por *content sniffing* + esquema.
-- **ExporterRegistry / AgentRegistry / AIProviderRegistry**: registran adaptadores nativos + plugins por entry points. Selección por configuración o por capacidades requeridas.
+### 4.4 Selección de adaptadores
+- `SourceProviderResolver`: elige provider por esquema/magic bytes.
+- `AIProviderRegistry` / `RendererRegistry` / `ParserRegistry`: nativos + plugins por entry points.
 
 ---
 
@@ -218,165 +210,110 @@ EventBus (port)       : publish/subscribe (estado de ejecuciones)
 
 ### 5.1 Agregados y entidades
 
-- **Project** *(raíz)*: agrupa fuentes, análisis, tareas. `id, name, config, created_at`.
-- **Source**: descripción de la importación. `type(GIT_REMOTE|LOCAL_GIT|FOLDER|ZIP|TARGZ), location, checksum, has_git, base_ref?`.
-- **Workspace**: directorio aislado materializado de una Source. `id, source_id, root_path, has_git, status, ttl`.
-- **Analysis**: resultado del análisis. `technologies[], frameworks[], languages[], modules[], dependencies[], project_map, docs_summary, metrics`.
-- **Task**: petición en lenguaje natural. `id, project_id, prompt, constraints, status`.
-- **Plan**: `id, task_id, steps[], affected_paths[], agent_assignments[], risk, est_tokens`.
-- **AgentExecution (Run)**: ejecución de un agente/plan. `id, plan_id, agent_id, status, logs, metrics(tokens,cost,duration)`.
-- **ChangeSet**: conjunto de cambios. `id, run_id, base_ref, file_changes[](path, op, diff_hunks), summary`.
-- **Review**: `id, changeset_id, findings[], verdict(APPROVED|REJECTED|CHANGES_REQUESTED), reviewer(human|ReviewAgent)`.
-- **Export**: `id, changeset_id, target(PATCH|ZIP|FOLDER|GIT_BRANCH|PR), artifact_ref, status`.
+- **Project** *(raíz)*: `id, name, config`. Agrupa escaneos de un mismo codebase.
+- **Source**: `type(GIT_REMOTE|LOCAL_GIT|FOLDER|ZIP|TARGZ), location, checksum, has_git, base_ref`.
+- **Workspace**: `id, source_id, root_path, has_git` — **solo lectura**.
+- **Scan** *(raíz del proceso)*: `id, project_id, source_id, status, options(static_only, ai_provider, budget), metrics, started_at, finished_at`.
+- **CodeModel** *(hechos estáticos)*: `languages[], tech_stack[], modules[], dependencies[](internas/externas), symbols[], entrypoints[], file_index`.
+- **Architecture**: `layers[], components[], relations[], style(inferido), evidence[]`.
+- **Feature** (funcionalidad): `id, name, description, related_symbols[], confidence, source(static|ai)`.
+- **Flow**: `id, name, kind(request|job|data), steps[](actor/component/call), diagram_ref`.
+- **Documentation** *(IR agnóstico de formato)*: `pages[], diagrams[], nav, generated_at, base_ref`.
+- **DocumentationBundle**: artefacto materializado (carpeta/zip) referenciando los ficheros.
 
 ### 5.2 Value Objects
-`SourceLocation`, `TechStack`, `Module`, `Dependency`, `ProjectMap`, `FileChange`, `DiffHunk`, `Capability`, `TokenUsage`, `Budget`, `ExecutionResult`, `Finding`, `Artifact`.
+`SourceLocation`, `Language`, `TechStack`, `Module`, `Dependency`, `Symbol`, `Entrypoint`,
+`Component`, `Relation`, `MermaidDiagram`, `DocPage`, `TokenUsage`, `Budget`, `Evidence`, `Artifact`.
 
-### 5.3 Máquina de estados (Task / Run)
+### 5.3 Máquina de estados (Scan)
 
 ```
-Task:   CREATED → ANALYZED → PLANNED → RUNNING → REVIEW → APPROVED → EXPORTED
-                                   ↘ FAILED        ↘ REJECTED → (replan)
-Run:    QUEUED → RUNNING → VERIFYING → DONE | FAILED | CANCELLED
+QUEUED → IMPORTING → ANALYZING → NARRATING → RENDERING → WRITING → DONE
+                                                        ↘ FAILED | CANCELLED
 ```
+(En modo `static_only`, `NARRATING` se omite.)
 
 ### 5.4 Invariantes
-- Un `ChangeSet` siempre referencia un `base_ref` (commit, o checksum del snapshot para fuentes no-Git).
-- No se exporta a `GIT_BRANCH`/`PR` si `Workspace.has_git == false`.
-- `Export` a `PR` requiere un plugin de hosting registrado y configurado.
-- Toda mutación de código ocurre dentro de un `Workspace` aislado, nunca sobre la Source original.
+- El Workspace es **inmutable** durante el escaneo; nunca se escribe en él.
+- Toda `Feature`/`Flow` referencia evidencia estática (símbolos/ficheros) o se marca como `source=ai` con baja confianza.
+- La `Documentation` registra `base_ref` (commit o checksum) y fecha para trazabilidad.
+- No se requiere git ni IA para completar un escaneo en modo estático.
 
 ### 5.5 Diagrama de clases (dominio)
 
 ```mermaid
 classDiagram
-    class Project {
-        +id
-        +name
-        +config
-    }
-    class Source {
-        +type
-        +location
-        +checksum
-        +has_git
-        +base_ref
-    }
-    class Workspace {
-        +root_path
-        +has_git
-        +status
-        +snapshot()
-        +cleanup()
-    }
-    class Analysis {
-        +technologies
-        +frameworks
-        +modules
-        +project_map
-        +docs_summary
-    }
-    class Task {
-        +prompt
-        +status
-    }
-    class Plan {
-        +steps
-        +affected_paths
-        +agent_assignments
-    }
-    class AgentExecution {
-        +agent_id
-        +status
-        +metrics
-    }
-    class ChangeSet {
-        +base_ref
-        +file_changes
-        +summary
-    }
-    class Review {
-        +findings
-        +verdict
-    }
-    class Export {
-        +target
-        +artifact_ref
-    }
+    class Project { +id +name +config }
+    class Source { +type +location +checksum +has_git +base_ref }
+    class Workspace { +root_path +has_git +read() +list() }
+    class Scan { +status +options +metrics }
+    class CodeModel { +languages +modules +dependencies +symbols +entrypoints }
+    class Architecture { +layers +components +relations +style +evidence }
+    class Feature { +name +description +confidence +source }
+    class Flow { +name +kind +steps +diagram_ref }
+    class Documentation { +pages +diagrams +nav +base_ref }
+    class DocumentationBundle { +artifact_ref +format }
 
+    Project "1" --> "*" Scan
     Project "1" --> "*" Source
     Source "1" --> "1" Workspace
-    Workspace "1" --> "1" Analysis
-    Project "1" --> "*" Task
-    Task "1" --> "1" Plan
-    Plan "1" --> "*" AgentExecution
-    AgentExecution "1" --> "1" ChangeSet
-    ChangeSet "1" --> "*" Review
-    ChangeSet "1" --> "*" Export
+    Scan "1" --> "1" CodeModel
+    CodeModel "1" --> "1" Architecture
+    CodeModel "1" --> "*" Feature
+    CodeModel "1" --> "*" Flow
+    Scan "1" --> "1" Documentation
+    Documentation "1" --> "1" DocumentationBundle
 ```
 
 ---
 
-## 6. Diagrama Mermaid (componentes / contexto)
+## 6. Diagrama Mermaid (componentes)
 
 ```mermaid
 flowchart TB
     subgraph Drivers
-        API[REST API - FastAPI]
-        CLI[CLI - Typer]
-        WRK[Workers - Arq]
+        CLI[CLI architect scan]
+        API[REST API]
+        WRK[Workers]
     end
-
     subgraph Application
-        UC[Use Cases / Orchestrators]
-        REG[Registries: Source/Exporter/Agent/AIProvider]
+        PIPE[ScanPipeline]
+        REG[Registries: Source/Parser/AI/Renderer]
     end
-
     subgraph Domain
         PORTS[[Ports]]
-        ENT[Entities & VOs]
-        DS[Domain Services]
+        MODEL[CodeModel · Architecture · Feature · Flow · Documentation]
     end
-
     subgraph Infrastructure
         SP[SourceProviders]
-        EXP[Exporters]
-        AIP[AIProviders]
-        GIT[GitService]
-        ANA[Analyzers tree-sitter]
-        SBX[Sandbox Runner]
+        PAR[tree-sitter Parsers]
+        DET[Detectors]
+        AI[AIProviders]
+        REN[Markdown+Mermaid Renderer]
+        EXP[Folder/Zip Exporter]
         DB[(PostgreSQL)]
         OS[(Object Store)]
     end
-
     subgraph Plugins
-        GH[GitHub PR Exporter]
-        GL[GitLab MR Exporter]
-        BB[Bitbucket PR Exporter]
+        HTML[HTML site renderer]
+        PUB[Wiki/Confluence publisher]
     end
 
-    API --> UC
-    CLI --> UC
-    WRK --> UC
-    UC --> PORTS
-    UC --> REG
-    PORTS --> ENT
-    DS --> ENT
+    CLI --> PIPE
+    API --> PIPE
+    WRK --> PIPE
+    PIPE --> PORTS
+    PIPE --> REG
+    PORTS --> MODEL
     SP -.implements.-> PORTS
+    PAR -.implements.-> PORTS
+    DET -.implements.-> PORTS
+    AI -.implements.-> PORTS
+    REN -.implements.-> PORTS
     EXP -.implements.-> PORTS
-    AIP -.implements.-> PORTS
-    GIT -.implements.-> PORTS
-    ANA -.implements.-> PORTS
-    SBX -.implements.-> PORTS
-    REG --> SP
-    REG --> EXP
-    REG --> AIP
     REG -.discovers.-> Plugins
-    GH -.implements.-> PORTS
-    GL -.implements.-> PORTS
-    BB -.implements.-> PORTS
-    UC --> DB
-    UC --> OS
+    PIPE --> DB
+    PIPE --> OS
 ```
 
 ---
@@ -386,183 +323,135 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     actor User
-    participant API
-    participant ImportUC as ImportSourceUseCase
+    participant CLI
     participant Resolver as SourceProviderResolver
     participant SP as SourceProvider
-    participant WS as Workspace
+    participant WS as Workspace (read-only)
     participant Sec as SecretScanner
-    participant Repo as Repositories
 
-    User->>API: POST /projects/{id}/sources {location}
-    API->>ImportUC: import(location)
-    ImportUC->>Resolver: resolve(location)
-    Resolver-->>ImportUC: SourceProvider concreto
-    ImportUC->>SP: fetch(location)
-    Note over SP,WS: git clone / copia carpeta / unzip / untar<br/>en directorio aislado y efímero
-    SP-->>WS: Workspace(root_path, has_git, base_ref)
-    ImportUC->>Sec: scan(workspace)
-    Sec-->>ImportUC: findings (secretos)
-    ImportUC->>Repo: persist(Source, Workspace)
-    ImportUC-->>API: SourceImported(source_id, has_git)
-    API-->>User: 201 Created
+    User->>CLI: architect scan <location>
+    CLI->>Resolver: resolve(location)
+    Resolver-->>CLI: SourceProvider concreto
+    CLI->>SP: fetch(location)
+    Note over SP,WS: git clone / copia carpeta / unzip / untar<br/>a directorio aislado de solo lectura
+    SP-->>WS: Workspace(root_path, has_git, base_ref/checksum)
+    CLI->>Sec: scan(workspace) (secretos)
+    Sec-->>CLI: findings (redacción posterior si se usa IA)
 ```
 
-Notas:
-- El **Resolver** decide el provider: esquema `git@`/`https://…git` → Git remoto; ruta con `.git` → Git local; ruta dir → carpeta; magic bytes `PK` → zip; `gzip` → tar.gz.
-- `base_ref`: commit HEAD si hay Git; si no, checksum del árbol (snapshot).
-- El workspace nunca es la fuente original: siempre copia/clon aislado.
+Resolución: `git@`/`*.git` → git remoto; carpeta con `.git` → git local; carpeta → folder;
+magic `PK` → zip; gzip → tar.gz.
 
 ---
 
-## 8. Flujo de análisis
+## 8. Flujo de análisis (estático + IA)
 
 ```mermaid
 sequenceDiagram
-    participant API
-    participant AnalyzeUC as AnalyzeCodebaseUseCase
-    participant Det as ManifestDetector
-    participant TS as TreeSitterAnalyzer
-    participant Docs as DocsReader
+    participant Pipe as ScanPipeline
+    participant Det as Detectors
+    participant Par as tree-sitter Parsers
+    participant Model as CodeModel builder
+    participant Inf as ArchitectureInferencer
     participant AI as AIProvider
-    participant Repo
 
-    API->>AnalyzeUC: analyze(workspace_id)
-    AnalyzeUC->>Det: detectStacks(workspace)
-    Det-->>AnalyzeUC: languages, frameworks, package managers
-    AnalyzeUC->>TS: buildModuleGraph(workspace)
-    TS-->>AnalyzeUC: módulos, dependencias internas
-    AnalyzeUC->>Docs: readDocs(README, /docs, ADRs)
-    Docs-->>AnalyzeUC: documentación cruda
-    AnalyzeUC->>AI: summarizeArchitecture(map + docs)
-    AI-->>AnalyzeUC: resumen + project map enriquecido
-    AnalyzeUC->>Repo: persist(Analysis)
-    AnalyzeUC-->>API: Analysis(project_map, tech, modules)
+    Pipe->>Det: detect languages, manifests, frameworks
+    Det-->>Pipe: stacks + deps
+    Pipe->>Par: parse files -> symbols, imports
+    Par-->>Pipe: ParsedFiles
+    Pipe->>Model: build module graph + dependency graph + entrypoints
+    Model-->>Pipe: CodeModel (hechos deterministas)
+    Pipe->>Inf: infer layers/components (heurística)
+    Inf-->>Pipe: Architecture (con evidencia)
+    alt no static_only
+        Pipe->>AI: narrate (map-reduce por módulo): features + flows + overview
+        AI-->>Pipe: Features, Flows, prosa (citando símbolos/ficheros)
+    end
 ```
 
-Estrategia para codebases grandes: detección determinista primero (manifiestos + tree-sitter, sin IA), luego resumen jerárquico por módulo con IA (map-reduce) para no saturar el contexto.
+Anti-alucinación: la IA recibe **el modelo estático** (módulos, símbolos, llamadas reales) y se
+le pide describir **solo** lo presente, citando evidencia. En `static_only` se omite esta fase.
 
 ---
 
-## 9. Flujo de ejecución (tarea → plan → cambios → export)
+## 9. Flujo de generación de documentación
 
 ```mermaid
 sequenceDiagram
-    actor User
-    participant API
-    participant TaskUC as CreateTaskUseCase
-    participant PlanUC as GeneratePlanUseCase
-    participant Orch as AgentOrchestrator
-    participant Agent as Agent(s)
-    participant WS as Workspace
-    participant Sbx as SandboxRunner
-    participant RevA as ReviewAgent
-    participant ExpUC as ExportUseCase
-    participant Exp as Exporter
+    participant Pipe as ScanPipeline
+    participant Doc as DocumentationBuilder
+    participant Mer as MermaidGenerator
+    participant Ren as MarkdownMermaidRenderer
+    participant Exp as Folder/Zip Exporter
 
-    User->>API: POST /tasks {prompt}
-    API->>TaskUC: createTask(prompt)
-    TaskUC-->>API: task_id (status=CREATED)
-
-    User->>API: POST /tasks/{id}/plan
-    API->>PlanUC: plan(task, analysis)
-    PlanUC->>Agent: ArchitectAgent.plan()
-    Agent-->>PlanUC: Plan(steps, agent_assignments)
-    PlanUC-->>API: Plan (status=PLANNED)
-
-    User->>API: POST /tasks/{id}/run
-    API-->>User: 202 Accepted (encolado)
-    Note over Orch: ejecutado por Worker (async)
-    Orch->>Agent: execute(step) por cada paso
-    Agent->>WS: leer/escribir archivos
-    Orch->>Sbx: run(tests/lint)
-    Sbx-->>Orch: ExecutionResult
-    Orch->>WS: snapshot/diff -> ChangeSet
-    Orch->>RevA: review(ChangeSet)
-    RevA-->>Orch: Review(verdict)
-    Orch-->>API: estado RUNNING→REVIEW
-
-    User->>API: POST /changesets/{id}/approve
-    User->>API: POST /changesets/{id}/export {target}
-    API->>ExpUC: export(changeset, target)
-    ExpUC->>Exp: export()
-    Exp-->>ExpUC: Artifact (patch/zip/branch/PR)
-    ExpUC-->>API: Export(artifact_ref)
+    Pipe->>Doc: build Documentation IR (pages + nav)
+    Doc->>Mer: architecture flowchart, module graph,<br/>sequence diagrams (flows), ER (data models)
+    Mer-->>Doc: MermaidDiagrams
+    Doc-->>Pipe: Documentation (IR agnóstico de formato)
+    Pipe->>Ren: render(Documentation) -> Markdown files
+    Ren-->>Pipe: RenderedArtifacts
+    Pipe->>Exp: export(bundle, folder|zip)
+    Exp-->>Pipe: Artifact (ruta del bundle)
 ```
 
-Reglas:
-- `run` es **asíncrono** (workers). La API responde 202 y el estado se consulta por polling/eventos.
-- Verificación (tests/lint) es un **gate**: si falla, el ChangeSet se marca y el ReviewAgent lo refleja.
-- Aprobación humana opcional según política del proyecto (auto-approve configurable).
+Estructura de la documentación generada (páginas):
+```
+docs-output/
+├── README.md            (overview + índice + tech stack + base_ref/fecha)
+├── architecture.md      (estilo, capas, componentes + diagrama flowchart)
+├── modules.md           (grafo de módulos + páginas por módulo)
+├── dependencies.md      (deps internas/externas + diagrama)
+├── features.md          (catálogo de funcionalidades)
+├── flows.md             (flujos con diagramas de secuencia Mermaid)
+└── glossary.md          (símbolos/entrypoints relevantes)
+```
 
 ---
 
 ## 10. Diseño de plugins
 
-### 10.1 Contrato
-Un plugin es un paquete Python que se registra vía **entry points** y expone implementaciones de puertos del dominio. Categorías: `source_provider`, `exporter`, `ai_provider`, `agent`, `analyzer`.
+Plugin = paquete Python registrado por **entry points**, que implementa puertos del dominio.
+Categorías: `source_provider`, `parser`, `ai_provider`, `renderer`, `publisher`.
 
 ```toml
-# pyproject.toml de un plugin
-[project.entry-points."codebase_architect.exporters"]
-github_pr = "ca_plugin_github:GitHubPullRequestExporter"
+[project.entry-points."codebase_architect.renderers"]
+html_site = "ca_plugin_html:HtmlSiteRenderer"
+
+[project.entry-points."codebase_architect.publishers"]
+github_wiki = "ca_plugin_github_wiki:GitHubWikiPublisher"
 ```
 
-### 10.2 Ciclo de vida
-1. **Descubrimiento**: al arrancar, los Registries leen entry points por categoría.
-2. **Validación de contrato**: cada plugin debe pasar la *conformance suite* (tests de contrato del puerto) — si no, se carga en modo degradado/deshabilitado.
-3. **Configuración**: credenciales/políticas vía settings con namespace (`plugins.github.token`).
-4. **Aislamiento**: el plugin solo ve puertos y VOs del dominio; nunca el `Application`/DB directamente.
+Ciclo de vida: descubrimiento al arrancar → validación de contrato (conformance suite) →
+configuración namespaced → aislamiento (el plugin solo ve puertos y VOs).
 
-### 10.3 Versionado
-- Contrato de puerto versionado (`PortVersion`). El loader rechaza plugins incompatibles.
-- Plugins de hosting (GitHub/GitLab/Bitbucket) reciben un `ChangeSet` ya exportado a rama Git y solo crean el PR/MR sobre el remoto correspondiente.
-
-### 10.4 Mapa de plugins previstos
-| Plugin | Categoría | Estado |
-|--------|-----------|--------|
-| GitHubPullRequestExporter | exporter | futuro |
-| GitLabMergeRequestExporter | exporter | futuro |
-| BitbucketPullRequestExporter | exporter | futuro |
-| (extensible) AndroidLintAgent, etc. | agent | futuro |
+Plugins previstos: `HtmlSiteRenderer` (sitio estático), publishers (GitHub Wiki, Confluence),
+analizadores específicos de framework (Spring, Django, Rails…). **El núcleo no los conoce.**
 
 ---
 
 ## 11. Diseño de persistencia
 
-### 11.1 Motor
-PostgreSQL (relacional + JSONB para estructuras semi-flexibles: análisis, planes, métricas). Object store (FS→S3) para artefactos binarios (zips, patches, logs grandes).
-
-### 11.2 Esquema (tablas principales)
+PostgreSQL + JSONB para estructuras flexibles (CodeModel, Architecture, Documentation IR);
+object store para bundles de docs. En modo CLI one-shot, persistencia opcional en ficheros.
 
 ```
 projects(id, name, config jsonb, created_at)
 sources(id, project_id, type, location, checksum, has_git, base_ref, created_at)
-workspaces(id, source_id, root_path, has_git, status, ttl, created_at)
-analyses(id, workspace_id, technologies jsonb, frameworks jsonb, modules jsonb,
-         project_map jsonb, docs_summary text, metrics jsonb, created_at)
-tasks(id, project_id, prompt, constraints jsonb, status, created_at)
-plans(id, task_id, steps jsonb, affected_paths jsonb, agent_assignments jsonb,
-      risk, est_tokens, created_at)
-agent_executions(id, plan_id, agent_id, status, started_at, finished_at, metrics jsonb)
-changesets(id, run_id, base_ref, summary, created_at)
-file_changes(id, changeset_id, path, op, diff text)        -- diff grande -> object store ref
-reviews(id, changeset_id, verdict, findings jsonb, reviewer, created_at)
-exports(id, changeset_id, target, artifact_ref, status, created_at)
-logs(id, run_id, level, message, ts, context jsonb)        -- o sink externo
+workspaces(id, source_id, root_path, has_git, created_at)
+scans(id, project_id, source_id, status, options jsonb, metrics jsonb, started_at, finished_at)
+code_models(id, scan_id, languages jsonb, modules jsonb, dependencies jsonb,
+            symbols jsonb, entrypoints jsonb)
+architectures(id, scan_id, layers jsonb, components jsonb, relations jsonb, style, evidence jsonb)
+features(id, scan_id, name, description, confidence, source, related jsonb)
+flows(id, scan_id, name, kind, steps jsonb, diagram_ref)
+documentations(id, scan_id, base_ref, generated_at, bundle_ref, nav jsonb)
+logs(id, scan_id, level, message, ts, context jsonb)
 metrics(id, scope_type, scope_id, name, value, ts)
 configurations(id, scope_type, scope_id, key, value jsonb)
 ```
 
-### 11.3 Patrón
-- **Repository por agregado** (puertos en dominio, SQLAlchemy en infra).
-- **Unit of Work** para transacciones que cruzan agregados.
-- Artefactos voluminosos → referencia en object store, no en DB.
-- Migraciones con **Alembic**.
-
-### 11.4 Retención
-- Workspaces efímeros con TTL; el ChangeSet/patch se persiste **antes** de limpiar.
-- Logs/métricas con política de retención configurable.
+Patrón: Repository por agregado (puertos en dominio, SQLAlchemy/File en infra) + Unit of Work +
+Alembic. Bundles voluminosos → object store; en DB solo la referencia.
 
 ---
 
@@ -572,45 +461,37 @@ configurations(id, scope_type, scope_id, key, value jsonb)
 codebase-architect/
 ├── pyproject.toml
 ├── docker-compose.yml
-├── docs/
-│   ├── SDD.md
-│   └── adr/
+├── docs/SDD.md
 ├── src/codebase_architect/
-│   ├── domain/                # SIN dependencias externas
-│   │   ├── model/             # Project, Source, Workspace, Task, Plan, ChangeSet...
-│   │   ├── ports/             # SourceProvider, AIProvider, Exporter, GitService, Agent, Repo...
-│   │   ├── services/          # domain services (reglas puras)
-│   │   └── events/            # eventos de dominio
+│   ├── domain/
+│   │   ├── model/        # Project, Source, Workspace, Scan, CodeModel, Architecture, Feature, Flow, Documentation
+│   │   ├── ports/        # SourceProvider, CodeParser, AIProvider, DocRenderer, DocExporter, Repo...
+│   │   ├── services/     # ArchitectureInferencer, FlowExtractor, DocumentationBuilder (reglas puras)
+│   │   └── events/
 │   ├── application/
-│   │   ├── use_cases/         # import, analyze, create_task, plan, run, export, review
-│   │   ├── orchestration/     # AgentOrchestrator
-│   │   ├── registries/        # Source/Exporter/Agent/AIProvider registries + resolver
+│   │   ├── pipeline/     # ScanPipeline (import→...→write)
+│   │   ├── use_cases/    # scan, import, analyze, generate, status
+│   │   ├── registries/   # source/parser/ai/renderer resolvers
 │   │   └── dto/
 │   ├── infrastructure/
-│   │   ├── source_providers/  # git_remote, local_git, folder, zip, targz
-│   │   ├── exporters/         # git_commit, patch, zip, folder
-│   │   ├── ai_providers/      # claude, openai, gemini, openrouter, local
-│   │   ├── git/               # libgit2/cli GitService
-│   │   ├── analysis/          # tree-sitter, manifest detectors, docs reader, secret scanner
-│   │   ├── sandbox/           # docker runner, null runner
-│   │   ├── persistence/       # sqlalchemy models, repositories, uow, alembic
-│   │   ├── objectstore/
-│   │   └── eventbus/          # redis pub/sub
-│   ├── agents/                # ArchitectAgent, Backend, Android, iOS, Web, QA, Security, Docs, Review
-│   ├── api/                   # FastAPI routers, schemas, deps
-│   ├── workers/               # Arq tasks
-│   ├── cli/                   # Typer commands
-│   └── shared/                # config, logging, errors, ids, types, telemetry
-├── plugins/                   # plugins externos (paquetes separados)
-│   ├── github/
-│   ├── gitlab/
-│   └── bitbucket/
+│   │   ├── source_providers/   # git_remote, local_git, folder, zip, targz
+│   │   ├── parsing/            # tree-sitter parsers por lenguaje
+│   │   ├── detection/          # manifest/language detectors, secret scanner
+│   │   ├── ai_providers/       # claude, openai, gemini, openrouter, local
+│   │   ├── rendering/          # markdown + mermaid renderer/generators
+│   │   ├── export/             # folder, zip
+│   │   ├── persistence/        # sqlalchemy/file repos, uow, alembic
+│   │   └── objectstore/
+│   ├── api/                    # FastAPI
+│   ├── workers/                # Arq
+│   ├── cli/                    # Typer (scan one-shot)
+│   └── shared/                 # config, logging, errors, ids, types, telemetry
+├── plugins/                    # html_site, publishers... (paquetes separados)
 └── tests/
     ├── unit/
-    ├── contract/              # conformance de puertos/plugins
-    ├── architecture/          # import-linter
-    ├── integration/           # testcontainers (pg/redis)
-    └── e2e/
+    ├── contract/               # conformance de puertos/plugins
+    ├── architecture/           # import-linter
+    └── integration/
 ```
 
 ---
@@ -619,196 +500,134 @@ codebase-architect/
 
 | Fase | Objetivo | Entregable verificable |
 |------|----------|------------------------|
-| **F0 — Cimientos** | Repo, pyproject, hexágono vacío, import-linter, CI, config/logging | `make test` verde; arch tests pasan |
-| **F1 — Importación** | `SourceProvider` + 5 adaptadores + Workspace + persistencia mínima + CLI `import` | Importar git/folder/zip/tar.gz a workspace aislado |
-| **F2 — Análisis** | Analyzers (manifest + tree-sitter) + DocsReader + project map + `analyze` | Generar Analysis para repos de prueba multi-lenguaje |
-| **F3 — IA & Plan** | `AIProvider` (Claude primero) + ArchitectAgent + GeneratePlan + `task`/`plan` | Plan estructurado a partir de prompt NL |
-| **F4 — Ejecución** | AgentOrchestrator + agentes base + edición en workspace + ChangeSet + `run`/`diff` | ChangeSet real con diff sobre repo de prueba |
-| **F5 — Verificación & Review** | SandboxRunner (Docker) + QA/ReviewAgent + gate de tests | Tests ejecutados en sandbox; veredicto de review |
-| **F6 — Export** | Exporters patch/zip/folder/git-commit + `export` | Artefactos descargables; rama Git local |
-| **F7 — API completa & Workers** | API REST completa async + Arq + estados/eventos | Flujo extremo a extremo vía API |
-| **F8 — Multi-IA & Plugins** | OpenAI/Gemini/OpenRouter/Local + contrato de plugin + conformance | Cambiar de proveedor por config; plugin de ejemplo |
-| **F9 — Hosting plugins** | GitHub/GitLab/Bitbucket PR/MR exporters (fuera del núcleo) | Abrir PR vía plugin configurado |
-| **F10 — Hardening** | Seguridad, secret scanning, presupuestos, métricas, docs | Límites de coste, scan de secretos, dashboards |
+| **F0 — Cimientos** | Repo, pyproject, hexágono, import-linter, config/logging, CI | `make test` verde; arch tests pasan |
+| **F1 — Importación** | `SourceProvider` + 5 adaptadores + Workspace read-only + resolver | Importar git/folder/zip/tar.gz a workspace aislado |
+| **F2 — Detección & Parsing** | Language/Manifest detectors + tree-sitter parsers + símbolos | CodeModel parcial (lenguajes, stacks, símbolos) |
+| **F3 — Modelo & Arquitectura** | Grafo de módulos/deps, entrypoints, `ArchitectureInferencer` | Architecture inferida con evidencia |
+| **F4 — Render estático** | DocumentationBuilder + MermaidGenerator + MarkdownRenderer + export | `architect scan` produce docs en **modo estático** |
+| **F5 — IA (narrativa)** | `AIProvider` (Claude) + Features + Flows anclados a evidencia | Docs con funcionalidades y flujos redactados |
+| **F6 — API & Workers** | API REST async + Arq + estados/eventos + descarga | Escaneo extremo a extremo vía API |
+| **F7 — Multi-IA & Plugins** | OpenAI/Gemini/OpenRouter/Local + entry points + conformance | Cambiar proveedor por config; renderer plugin de ejemplo |
+| **F8 — Hardening** | Secret scanning/redacción, presupuestos, caché, métricas, docs | Límites de coste, scan de secretos, observabilidad |
 
-Cada fase = una o varias épicas, con commits pequeños y coherentes.
+> El one-shot **`architect scan`** ya es usable al final de **F4** (modo estático) y completo en **F5** (con IA).
 
 ---
 
 ## 14. Épicas y tareas pequeñas
 
-### Épica F0 — Cimientos
-- [ ] Inicializar `pyproject.toml`, layout `src/`, herramientas (ruff, mypy, pytest).
-- [ ] Configurar `import-linter` con contratos de capa (domain no importa infra).
-- [ ] `shared`: config (Pydantic Settings), logging estructurado, errores base, generador de ids.
-- [ ] CI (lint + type + tests + arch).
-- [ ] `docker-compose` con Postgres y Redis para dev.
+### Épica F0 — Cimientos *(parcialmente hecho)*
+- [x] `pyproject.toml`, layout `src/`, ruff/mypy/pytest, contratos import-linter.
+- [x] `shared`: errores, ids, logging, config (capability-aware).
+- [ ] Ajustar contratos/imports al nuevo dominio (doc-generator).
+- [ ] Tests unit (`shared`) + tests de arquitectura (import-linter).
+- [ ] CI (lint+type+test+arch) + `docker-compose` (pg/redis para fases con API).
 
 ### Épica F1 — Importación
-- [ ] Definir puertos `SourceProvider` y `Workspace` en dominio.
-- [ ] VO `SourceLocation` + `SourceProviderResolver` (sniffing).
-- [ ] Adaptador `LocalFolderSourceProvider`.
-- [ ] Adaptador `ZipSourceProvider`.
-- [ ] Adaptador `TarGzSourceProvider`.
-- [ ] Adaptador `LocalGitSourceProvider`.
-- [ ] Adaptador `GitRemoteSourceProvider` (degradable si no hay git).
-- [ ] `ImportSourceUseCase` + repos `Source`/`Workspace`.
-- [ ] CLI `architect import`.
-- [ ] Tests de contrato `SourceProvider` (mismo set para los 5 adaptadores).
+- [ ] Puertos `SourceProvider` y `Workspace` (read-only) + VO `SourceLocation`.
+- [ ] `SourceProviderResolver` (sniffing).
+- [ ] Adaptadores: Folder, Zip, TarGz, LocalGit, GitRemote (degradable sin git).
+- [ ] CLI `architect scan` (de momento solo importa) + tests de contrato del puerto.
 
-### Épica F2 — Análisis
-- [ ] Puerto `Analyzer` + VOs `TechStack`/`Module`/`ProjectMap`.
-- [ ] `ManifestDetector` (npm, pip/poetry, gradle/maven, cocoapods/spm, go.mod, cargo…).
-- [ ] `TreeSitterAnalyzer` (grafo de módulos/símbolos).
-- [ ] `DocsReader` (README/docs/ADR).
-- [ ] `AnalyzeCodebaseUseCase` (determinista + resumen IA opcional).
-- [ ] CLI `architect analyze`; persistencia `Analysis`.
+### Épica F2 — Detección & Parsing
+- [ ] `LanguageDetector`, `ManifestDetector` (npm/pip/gradle/cocoapods/go.mod/cargo…).
+- [ ] `CodeParser` (tree-sitter) por lenguaje prioritario (py, js/ts primero).
+- [ ] Extracción de símbolos e imports → `ParsedFile`.
 
-### Épica F3 — IA & Plan
-- [ ] Puerto `AIProvider` + `Capability` + `TokenUsage`/`Budget`.
-- [ ] `ClaudeProvider` (adaptador) + tests de contrato `AIProvider`.
-- [ ] Interfaz `Agent` + `ArchitectAgent`.
-- [ ] `CreateTaskUseCase` + `GeneratePlanUseCase`.
-- [ ] CLI `architect task`, `architect plan`.
+### Épica F3 — Modelo & Arquitectura
+- [ ] `CodeModel` builder: grafo de módulos + dependencias + entrypoints.
+- [ ] `ArchitectureInferencer` (carpetas + clustering, con evidencia).
+- [ ] `FlowExtractor` (cadenas de llamadas desde entrypoints).
 
-### Épica F4 — Ejecución
-- [ ] `AgentRegistry` + agentes base (Backend/Web/Docs como mínimos).
-- [ ] `AgentOrchestrator` (ejecuta pasos del plan).
-- [ ] Edición de workspace + cálculo de `ChangeSet`/diff.
-- [ ] CLI `architect run`, `architect diff`; persistencia `AgentExecution`/`ChangeSet`.
+### Épica F4 — Render estático
+- [ ] `Documentation` IR + `DocumentationBuilder`.
+- [ ] `MermaidGenerator` (flowchart, grafo de módulos, secuencia, ER).
+- [ ] `MarkdownMermaidRenderer` + `FolderExporter`/`ZipExporter`.
+- [ ] `ScanPipeline` end-to-end en modo estático.
 
-### Épica F5 — Verificación & Review
-- [ ] Puerto `SandboxRunner` + `DockerSandboxRunner` + `NullSandboxRunner`.
-- [ ] `QAAgent` (lanza tests/lint), `ReviewAgent`, `SecurityAgent`.
-- [ ] Gate de verificación en el orquestador; entidad `Review`.
+### Épica F5 — IA (narrativa)
+- [ ] Puerto `AIProvider` + `Capability`/`TokenUsage`/`Budget` + `ClaudeProvider`.
+- [ ] Narración map-reduce: `Feature` catalog + `Flow` descriptions ancladas a evidencia.
+- [ ] Redacción/secret-scan antes de enviar a IA; modo `static_only` conmutador.
 
-### Épica F6 — Export
-- [ ] Puerto `Exporter` + `PatchExporter`, `ZipExporter`, `FolderExporter`.
-- [ ] `GitCommitExporter` (rama local) usando `GitService`.
-- [ ] `ExportUseCase` + CLI `architect export`.
+### Épica F6 — API & Workers
+- [ ] API REST (endpoints §15.3) + Arq + `EventBus` + descarga del bundle.
 
-### Épica F7 — API & Workers
-- [ ] API REST (endpoints §15.4) con FastAPI.
-- [ ] Workers Arq para `run` async + `EventBus` (estado).
-- [ ] CLI `architect status` (consulta estados).
-
-### Épica F8 — Multi-IA & Plugins
+### Épica F7 — Multi-IA & Plugins
 - [ ] `OpenAIProvider`, `GeminiProvider`, `OpenRouterProvider`, `LocalProvider`.
-- [ ] Mecanismo de entry points + conformance suite de plugins.
+- [ ] Entry points + conformance suite; `HtmlSiteRenderer` de ejemplo (plugin).
 
-### Épica F9 — Hosting plugins (fuera del núcleo)
-- [ ] `GitHubPullRequestExporter` (plugin).
-- [ ] `GitLabMergeRequestExporter`, `BitbucketPullRequestExporter`.
-
-### Épica F10 — Hardening
-- [ ] Secret scanning en import; redacción antes de IA.
-- [ ] Presupuestos/limites de tokens y coste por tarea.
-- [ ] Métricas/observabilidad (OpenTelemetry/Prometheus) y documentación.
+### Épica F8 — Hardening
+- [ ] Secret scanning/redacción, presupuestos/caché de IA, métricas/telemetría, documentación de uso.
 
 ---
 
 ## 15. SDD — detalle complementario
 
-### 15.1 Interfaces clave (firmas conceptuales, no implementación)
+### 15.1 Interfaces clave (firmas conceptuales)
 
 ```text
-SourceProvider:
-    supports(location: SourceLocation) -> bool
-    fetch(location: SourceLocation) -> Workspace
-
-Workspace:
-    root_path: Path
-    has_git: bool
-    read(path) / write(path, content) / list(glob) -> ...
-    snapshot() -> SnapshotRef
-    diff(base: SnapshotRef) -> ChangeSet
-    cleanup() -> None
-
-AIProvider:
-    capabilities() -> set[Capability]      # chat, tools, vision, long_context...
-    complete(prompt, options) -> Completion
-    chat(messages, options) -> Completion   # incluye TokenUsage
-
-GitService:                                # opcional
-    clone / status / diff / branch / checkout / commit / merge / push
-
-Agent:
-    id: str ; capabilities: set[Capability]
-    execute(ctx: AgentContext) -> AgentResult   # ctx: workspace, plan_step, ai, tools
-
-Exporter:
-    supports(target: ExportTarget) -> bool
-    export(changeset: ChangeSet, target: ExportTarget) -> Artifact
+SourceProvider:  supports(loc) -> bool ;  fetch(loc) -> Workspace   # read-only
+Workspace:       root_path ; has_git ; read(path) ; list(glob) ; checksum()
+CodeParser:      language ; parse(file) -> ParsedFile(symbols, imports)
+AIProvider:      capabilities() -> set[Capability] ; chat(messages, options) -> Completion
+DocRenderer:     render(doc: Documentation) -> list[RenderedArtifact]
+DocExporter:     supports(target) -> bool ; export(bundle, target) -> Artifact
 ```
 
-### 15.2 Sistema de agentes
-- Todos implementan la **misma interfaz** `Agent`.
-- Catálogo: `ArchitectAgent` (planifica), `BackendAgent`, `AndroidAgent`, `iOSAgent`, `WebAgent`, `QAAgent`, `SecurityAgent`, `DocumentationAgent`, `ReviewAgent`.
-- Selección por **capacidades** (el plan asigna agentes a pasos según stack detectado y tipo de paso).
-- El orquestador inyecta `AIProvider`, `Workspace` y herramientas (lectura/escritura/búsqueda/sandbox) en `AgentContext`.
-
-### 15.3 CLI (mapa de comandos)
+### 15.2 CLI (mapa de comandos)
 
 ```
-architect import   <location> [--project P]      # git/folder/zip/tar.gz
-architect analyze  [--source S]
-architect task     "<descripción en lenguaje natural>"
-architect plan     [--task T]
-architect run      [--task T] [--auto-approve]
-architect status   [--task T | --run R]
-architect diff     [--changeset C]
-architect export   [--changeset C] --target patch|zip|folder|branch|pr
+architect scan <location> [--out ./docs-output] [--static-only]
+                          [--ai-provider claude] [--budget-usd 2] [--zip]
+architect import   <location>                 # solo importar (debug)
+architect analyze  [--scan S]                 # solo análisis estático
+architect generate [--scan S] [--out DIR]     # solo (re)render
+architect status   [--scan S]
 ```
 
-### 15.4 API REST (endpoints principales)
+`architect scan` es el comando estrella: hace import → análisis → (IA) → render → escribe docs.
+
+### 15.3 API REST (endpoints principales)
 
 ```
-POST   /projects                         crear proyecto
-POST   /projects/{id}/sources            importar código (location)
-POST   /sources/{id}/analyze             analizar codebase  -> Analysis
-GET    /analyses/{id}                    consultar análisis
-POST   /projects/{id}/tasks              crear tarea (prompt NL)
-POST   /tasks/{id}/plan                  generar plan
-POST   /tasks/{id}/run                   ejecutar agentes (202, async)
-GET    /tasks/{id}                       estado de la tarea
-GET    /runs/{id}                        estado de ejecución
-GET    /changesets/{id}                  ver cambios
-GET    /changesets/{id}/diff             ver diff
-POST   /changesets/{id}/approve          aprobar cambios
-POST   /changesets/{id}/export           exportar (target) -> Artifact
-GET    /exports/{id}/download            descargar resultado
+POST   /projects                       crear proyecto
+POST   /scans                          lanzar escaneo {location, options}  (202, async)
+GET    /scans/{id}                     estado del escaneo
+GET    /scans/{id}/code-model          modelo estático extraído
+GET    /scans/{id}/architecture        arquitectura inferida
+GET    /scans/{id}/documentation       documentación generada (metadata + nav)
+GET    /scans/{id}/download            descargar bundle (zip)
 ```
 
-### 15.5 Configuración (extracto)
+### 15.4 Configuración (extracto)
 
 ```yaml
+scan:
+  static_only: false
+  default_out: ./docs-output
 ai:
   default_provider: claude
-  budget_per_task_usd: 5.0
+  budget_per_scan_usd: 2.0
 providers:
-  claude:   { model: claude-..., api_key_env: ANTHROPIC_API_KEY }
-  openai:   { model: ...,        api_key_env: OPENAI_API_KEY }
-  local:    { endpoint: http://localhost:11434 }
+  claude: { model: claude-..., api_key_env: ANTHROPIC_API_KEY }
+  local:  { endpoint: http://localhost:11434 }
 git:
   enabled: true
-sandbox:
-  enabled: true
-  driver: docker
-plugins:
-  github: { enabled: false }
-review:
-  require_human_approval: true
 ```
 
-### 15.6 Tests de arquitectura (garantía del desacoplamiento)
-- `domain` no importa `application`, `infrastructure`, `api`, `agents`, `plugins`.
-- Ninguna capa importa `plugins` directamente (solo vía Registry).
-- Ningún módulo del núcleo importa SDKs de hosting (github/gitlab/bitbucket).
-- Contratos verificados con **import-linter** en CI (bloqueante).
+### 15.5 Tests de arquitectura
+- `domain` no importa `application`/`infrastructure`/`api`/`cli`/`workers`/`plugins`.
+- Ningún módulo del núcleo importa SDKs de hosting ni el renderer concreto fuera de su adaptador.
+- Verificado con **import-linter** en CI (bloqueante).
 
 ---
 
 ## Próximo paso
 
-Este documento es la **propuesta de diseño**. No se ha implementado ningún componente.
-A la espera de tu **aprobación** (total o con cambios) para comenzar por la **Fase F0 (Cimientos)** con commits pequeños y coherentes.
+Diseño v2 reorientado a **generación de documentación** (arquitectura/funcionalidades/flujos en
+Markdown+Mermaid, análisis híbrido, multi-fuente). **Sin implementación nueva** salvo el scaffold
+de F0 ya existente (reutilizable).
+
+A la espera de tu **aprobación** para continuar **F0** (ajustar al nuevo dominio + tests + CI) y
+seguir con F1.
