@@ -1,0 +1,192 @@
+"""Tree-sitter based code parser for Java, Kotlin and TypeScript/Angular.
+
+Grammars are loaded from precompiled wheels, so no network access is needed.
+Symbol extraction walks the concrete syntax tree for a small, curated set of
+declaration node types per language; this is robust and fast, and degrades to
+"no symbols" rather than failing when a grammar version shifts.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import tree_sitter_html
+import tree_sitter_java
+import tree_sitter_kotlin
+import tree_sitter_typescript
+from tree_sitter import Language as TSLanguage
+from tree_sitter import Node, Parser
+
+from codebase_architect.domain.model.code import (
+    ImportRef,
+    Language,
+    ParsedFile,
+    Symbol,
+    SymbolKind,
+)
+from codebase_architect.domain.ports.analysis import CodeParser
+
+_NAME_NODE_TYPES = {"identifier", "type_identifier", "simple_identifier"}
+
+
+@dataclass(frozen=True)
+class _LangSpec:
+    ts_language: TSLanguage
+    symbols: dict[str, SymbolKind]
+    import_types: frozenset[str]
+    package_types: frozenset[str] = frozenset()
+    # How to read the imported target: "text" (whole node text) or "source"
+    # (a string literal child field, used by ECMAScript import statements).
+    import_style: str = "text"
+    parser: Parser = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "parser", Parser(self.ts_language))
+
+
+def _build_specs() -> dict[Language, _LangSpec]:
+    java = _LangSpec(
+        ts_language=TSLanguage(tree_sitter_java.language()),
+        symbols={
+            "class_declaration": SymbolKind.CLASS,
+            "record_declaration": SymbolKind.CLASS,
+            "interface_declaration": SymbolKind.INTERFACE,
+            "annotation_type_declaration": SymbolKind.INTERFACE,
+            "enum_declaration": SymbolKind.ENUM,
+            "method_declaration": SymbolKind.METHOD,
+            "constructor_declaration": SymbolKind.METHOD,
+        },
+        import_types=frozenset({"import_declaration"}),
+        package_types=frozenset({"package_declaration"}),
+        import_style="text",
+    )
+    kotlin = _LangSpec(
+        ts_language=TSLanguage(tree_sitter_kotlin.language()),
+        symbols={
+            "class_declaration": SymbolKind.CLASS,
+            "object_declaration": SymbolKind.OBJECT,
+            "function_declaration": SymbolKind.FUNCTION,
+        },
+        import_types=frozenset({"import"}),
+        package_types=frozenset({"package_header"}),
+        import_style="text",
+    )
+    ts_symbols = {
+        "class_declaration": SymbolKind.CLASS,
+        "abstract_class_declaration": SymbolKind.CLASS,
+        "interface_declaration": SymbolKind.INTERFACE,
+        "enum_declaration": SymbolKind.ENUM,
+        "function_declaration": SymbolKind.FUNCTION,
+        "function_signature": SymbolKind.FUNCTION,
+        "method_definition": SymbolKind.METHOD,
+    }
+    typescript = _LangSpec(
+        ts_language=TSLanguage(tree_sitter_typescript.language_typescript()),
+        symbols=ts_symbols,
+        import_types=frozenset({"import_statement"}),
+        import_style="source",
+    )
+    tsx = _LangSpec(
+        ts_language=TSLanguage(tree_sitter_typescript.language_tsx()),
+        symbols=ts_symbols,
+        import_types=frozenset({"import_statement"}),
+        import_style="source",
+    )
+    return {
+        Language.JAVA: java,
+        Language.KOTLIN: kotlin,
+        Language.TYPESCRIPT: typescript,
+        Language.TSX: tsx,
+        # JavaScript is parsed with the TypeScript (superset) grammar.
+        Language.JAVASCRIPT: typescript,
+    }
+
+
+class TreeSitterParser(CodeParser):
+    """Extracts symbols, imports and package from supported source files."""
+
+    def __init__(self) -> None:
+        self._specs = _build_specs()
+        # Validate the HTML grammar loads (used for LOC/templates later).
+        TSLanguage(tree_sitter_html.language())
+
+    def supports(self, language: Language) -> bool:
+        return language in self._specs
+
+    def parse(self, relative_path: str, language: Language, content: bytes) -> ParsedFile:
+        loc = content.count(b"\n") + (1 if content and not content.endswith(b"\n") else 0)
+        spec = self._specs.get(language)
+        if spec is None:
+            return ParsedFile(path=relative_path, language=language, loc=loc)
+
+        tree = spec.parser.parse(content)
+        symbols: list[Symbol] = []
+        imports: list[ImportRef] = []
+        package: str | None = None
+
+        stack: list[Node] = [tree.root_node]
+        while stack:
+            node = stack.pop()
+            kind = spec.symbols.get(node.type)
+            if kind is not None:
+                name = _symbol_name(node)
+                if name:
+                    symbols.append(
+                        Symbol(
+                            name=name,
+                            kind=kind,
+                            start_line=node.start_point[0] + 1,
+                            end_line=node.end_point[0] + 1,
+                        )
+                    )
+            elif node.type in spec.import_types:
+                target = _import_target(node, spec.import_style)
+                if target:
+                    imports.append(ImportRef(target=target))
+            elif node.type in spec.package_types:
+                package = _package_name(node)
+            stack.extend(node.children)
+
+        return ParsedFile(
+            path=relative_path,
+            language=language,
+            loc=loc,
+            symbols=tuple(symbols),
+            imports=tuple(imports),
+            package=package,
+        )
+
+
+def _symbol_name(node: Node) -> str | None:
+    field_name = node.child_by_field_name("name")
+    if field_name is not None and field_name.text is not None:
+        return field_name.text.decode("utf-8", "replace")
+    for child in node.children:
+        if child.type in _NAME_NODE_TYPES and child.text is not None:
+            return child.text.decode("utf-8", "replace")
+    return None
+
+
+def _import_target(node: Node, style: str) -> str | None:
+    if style == "source":
+        source = node.child_by_field_name("source")
+        if source is not None and source.text is not None:
+            return source.text.decode("utf-8", "replace").strip("'\"")
+        return None
+    # text style (Java/Kotlin): strip the keyword, modifiers and terminator.
+    if node.text is None:
+        return None
+    raw = node.text.decode("utf-8", "replace").strip()
+    raw = raw.removeprefix("import").strip()
+    raw = raw.removeprefix("static").strip()
+    raw = raw.rstrip(";").strip()
+    raw = raw.split(" as ", 1)[0].strip()
+    return raw or None
+
+
+def _package_name(node: Node) -> str | None:
+    if node.text is None:
+        return None
+    raw = node.text.decode("utf-8", "replace").strip()
+    raw = raw.removeprefix("package").strip()
+    return raw.rstrip(";").strip() or None

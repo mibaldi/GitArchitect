@@ -22,7 +22,12 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised only without 
     ) from exc
 
 from codebase_architect.application.registries.source_resolver import SourceProviderResolver
+from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
+from codebase_architect.domain.model.code_model import CodeModel
+from codebase_architect.infrastructure.detection.language_detector import ExtensionLanguageDetector
+from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector
+from codebase_architect.infrastructure.parsing.tree_sitter_parser import TreeSitterParser
 from codebase_architect.infrastructure.source_providers import default_source_providers
 from codebase_architect.shared.config import get_settings
 from codebase_architect.shared.errors import CodebaseArchitectError
@@ -52,30 +57,60 @@ def scan(
         ..., help="Git URL, local folder, local Git repo, .zip or .tar.gz"
     ),
 ) -> None:
-    """Import a codebase into an isolated, read-only workspace.
+    """Import a codebase and run static analysis, printing a summary.
 
-    Later phases extend this command to also analyze the codebase and generate
-    documentation. For now it materializes the source and prints a summary.
+    Later phases extend this command to infer architecture, narrate with AI and
+    render documentation. For now it materializes the source and reports the
+    detected languages, stacks and code symbols.
     """
     settings = get_settings()
-    use_case = ImportSourceUseCase(
+    importer = ImportSourceUseCase(
         resolver=SourceProviderResolver(default_source_providers()),
         workspaces_dir=Path(settings.workspaces_dir),
     )
+    analyzer = BuildCodeModelUseCase(
+        language_detector=ExtensionLanguageDetector(),
+        parser=TreeSitterParser(),
+        manifest_detector=CompositeManifestDetector(),
+    )
     try:
-        workspace = use_case.execute(location)
+        workspace = importer.execute(location)
+        model = analyzer.execute(workspace)
     except CodebaseArchitectError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    file_count = sum(1 for _ in workspace.iter_files())
     typer.secho("Imported codebase", fg=typer.colors.GREEN)
     typer.echo(f"  workspace:  {workspace.id}")
     typer.echo(f"  type:       {workspace.source_type.value}")
     typer.echo(f"  path:       {workspace.root_path}")
     typer.echo(f"  has_git:    {workspace.has_git}")
     typer.echo(f"  base_ref:   {workspace.base_ref}")
-    typer.echo(f"  files:      {file_count}")
+    _print_code_model(model)
+
+
+def _print_code_model(model: CodeModel) -> None:
+    typer.secho("\nLanguages", fg=typer.colors.CYAN)
+    breakdown = model.language_breakdown()
+    if breakdown:
+        for stat in breakdown:
+            typer.echo(f"  {stat.language.value:<12} {stat.files:>4} files  {stat.loc:>7} LOC")
+    else:
+        typer.echo("  (no recognized source files)")
+
+    typer.secho("\nStacks", fg=typer.colors.CYAN)
+    if model.stacks:
+        for stack in model.stacks:
+            version = f" {stack.version}" if stack.version else ""
+            typer.echo(f"  {stack.name}{version}  ({stack.category.value}) — {stack.evidence}")
+    else:
+        typer.echo("  (none detected)")
+
+    typer.secho("\nTotals", fg=typer.colors.CYAN)
+    typer.echo(f"  parsed files: {len(model.parsed_files)}")
+    typer.echo(f"  symbols:      {model.symbol_count}")
+    typer.echo(f"  dependencies: {len(model.dependencies)}")
+    typer.echo(f"  other files:  {model.other_file_count}")
 
 
 if __name__ == "__main__":  # pragma: no cover

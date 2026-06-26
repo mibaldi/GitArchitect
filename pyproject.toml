@@ -10,6 +10,13 @@ dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
     "structlog>=24.1",
+    # Static parsing. Grammar packages ship precompiled wheels (no runtime
+    # download), so analysis works in restricted/offline environments.
+    "tree-sitter>=0.23",
+    "tree-sitter-java>=0.23",
+    "tree-sitter-kotlin>=1.1",
+    "tree-sitter-typescript>=0.23",
+    "tree-sitter-html>=0.23",
 ]
 
 [project.optional-dependencies]
