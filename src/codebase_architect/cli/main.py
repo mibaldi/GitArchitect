@@ -26,6 +26,11 @@ app = typer.Typer(
 )
 
 
+@app.callback()
+def main() -> None:
+    """Codebase Architect command-line interface."""
+
+
 @app.command()
 def version() -> None:
     """Print the installed version."""

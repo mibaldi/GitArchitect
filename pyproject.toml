@@ -78,6 +78,7 @@ source = ["src/codebase_architect"]
 
 [tool.importlinter]
 root_packages = ["codebase_architect"]
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Hexagonal layers point inwards"
@@ -133,4 +134,3 @@ forbidden_modules = [
     "gitlab",
     "atlassian",
 ]
-allow_indirect_imports = true
