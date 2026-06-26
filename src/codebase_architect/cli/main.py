@@ -1,14 +1,15 @@
 """CLI entrypoint.
 
-Currently exposes ``version`` and ``scan``. In this phase ``scan`` performs the
-import step (materializing any supported source into an isolated, read-only
-workspace) and reports what it found; later phases add analysis, AI narrative
-and documentation rendering. Typer is an optional dependency (the ``cli``
-extra); importing this module without it raises a clear, actionable error.
+Exposes ``version`` and ``scan``. ``scan`` runs the full static pipeline
+(import → analyze → infer architecture → build & render documentation) and, when
+given ``--out``, writes a Markdown + Mermaid documentation bundle. Typer is an
+optional dependency (the ``cli`` extra); importing this module without it raises
+a clear, actionable error.
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from codebase_architect import __version__
@@ -21,13 +22,15 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised only without 
         "The CLI requires the 'cli' extra. Install it with: pip install 'codebase-architect[cli]'"
     ) from exc
 
+from codebase_architect.application.pipeline.scan_pipeline import ScanPipeline, ScanResult
 from codebase_architect.application.registries.source_resolver import SourceProviderResolver
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
-from codebase_architect.domain.model.code_model import CodeModel
 from codebase_architect.infrastructure.detection.language_detector import ExtensionLanguageDetector
 from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector
+from codebase_architect.infrastructure.export.folder_exporter import FolderExporter
 from codebase_architect.infrastructure.parsing.tree_sitter_parser import TreeSitterParser
+from codebase_architect.infrastructure.rendering.markdown_renderer import MarkdownMermaidRenderer
 from codebase_architect.infrastructure.source_providers import default_source_providers
 from codebase_architect.shared.config import get_settings
 from codebase_architect.shared.errors import CodebaseArchitectError
@@ -56,40 +59,61 @@ def scan(
     location: str = typer.Argument(
         ..., help="Git URL, local folder, local Git repo, .zip or .tar.gz"
     ),
+    out: Path | None = typer.Option(
+        None, "--out", "-o", help="Write the Markdown + Mermaid documentation to this folder"
+    ),
+    title: str | None = typer.Option(
+        None, "--title", "-t", help="Project title for the documentation"
+    ),
 ) -> None:
-    """Import a codebase and run static analysis, printing a summary.
+    """Scan a codebase and generate clean documentation.
 
-    Later phases extend this command to infer architecture, narrate with AI and
-    render documentation. For now it materializes the source and reports the
-    detected languages, stacks and code symbols.
+    Runs the full static pipeline and prints a summary. With ``--out`` it also
+    writes a Markdown + Mermaid documentation bundle (overview, architecture,
+    modules, entrypoints, flows and dependencies).
     """
     settings = get_settings()
-    importer = ImportSourceUseCase(
-        resolver=SourceProviderResolver(default_source_providers()),
-        workspaces_dir=Path(settings.workspaces_dir),
-    )
-    analyzer = BuildCodeModelUseCase(
-        language_detector=ExtensionLanguageDetector(),
-        parser=TreeSitterParser(),
-        manifest_detector=CompositeManifestDetector(),
+    pipeline = ScanPipeline(
+        importer=ImportSourceUseCase(
+            resolver=SourceProviderResolver(default_source_providers()),
+            workspaces_dir=Path(settings.workspaces_dir),
+        ),
+        model_builder=BuildCodeModelUseCase(
+            language_detector=ExtensionLanguageDetector(),
+            parser=TreeSitterParser(),
+            manifest_detector=CompositeManifestDetector(),
+        ),
+        renderer=MarkdownMermaidRenderer(),
+        exporter=FolderExporter(),
     )
     try:
-        workspace = importer.execute(location)
-        model = analyzer.execute(workspace)
+        result = pipeline.run(
+            location,
+            project_title=title or _default_title(location),
+            generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            out_dir=out,
+        )
     except CodebaseArchitectError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.secho("Imported codebase", fg=typer.colors.GREEN)
-    typer.echo(f"  workspace:  {workspace.id}")
-    typer.echo(f"  type:       {workspace.source_type.value}")
-    typer.echo(f"  path:       {workspace.root_path}")
-    typer.echo(f"  has_git:    {workspace.has_git}")
-    typer.echo(f"  base_ref:   {workspace.base_ref}")
-    _print_code_model(model)
+    _print_summary(result)
 
 
-def _print_code_model(model: CodeModel) -> None:
+def _default_title(location: str) -> str:
+    name = Path(location.rstrip("/")).name
+    for suffix in (".git", ".zip", ".tar.gz", ".tgz", ".tar"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name or "Codebase"
+
+
+def _print_summary(result: ScanResult) -> None:
+    model = result.code_model
+    typer.secho("Scanned codebase", fg=typer.colors.GREEN)
+    typer.echo(f"  type:     {result.workspace.source_type.value}")
+    typer.echo(f"  base_ref: {result.workspace.base_ref}")
+
     typer.secho("\nLanguages", fg=typer.colors.CYAN)
     breakdown = model.language_breakdown()
     if breakdown:
@@ -107,10 +131,19 @@ def _print_code_model(model: CodeModel) -> None:
         typer.echo("  (none detected)")
 
     typer.secho("\nTotals", fg=typer.colors.CYAN)
-    typer.echo(f"  parsed files: {len(model.parsed_files)}")
+    typer.echo(f"  modules:      {len(result.module_graph.modules)}")
+    internal = len(result.module_graph.edges)
+    external = len(model.dependencies)
+    typer.echo(f"  dependencies: {internal} internal / {external} external")
     typer.echo(f"  symbols:      {model.symbol_count}")
-    typer.echo(f"  dependencies: {len(model.dependencies)}")
-    typer.echo(f"  other files:  {model.other_file_count}")
+    typer.echo(f"  entrypoints:  {len(result.entrypoints)}")
+
+    if result.bundle is not None:
+        typer.secho("\nDocumentation written", fg=typer.colors.GREEN)
+        typer.echo(f"  {result.bundle.root}  ({len(result.bundle.files)} files)")
+        typer.echo(f"  open {result.bundle.root}/README.md")
+    else:
+        typer.echo("\n(no --out given; documentation not written)")
 
 
 if __name__ == "__main__":  # pragma: no cover

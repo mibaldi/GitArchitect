@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from codebase_architect.domain.model.source import SourceType
 from codebase_architect.domain.model.workspace import Workspace
 from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector

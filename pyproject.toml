@@ -60,6 +60,10 @@ ignore = []
 [tool.ruff.lint.isort]
 known-first-party = ["codebase_architect"]
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer's documented idiom is to call Option/Argument in parameter defaults.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
