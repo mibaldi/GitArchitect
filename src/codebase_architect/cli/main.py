@@ -106,6 +106,15 @@ def scan(
     no_ai_cache: bool = typer.Option(
         False, "--no-ai-cache", help="Bypass the AI narrative cache (force a fresh call)"
     ),
+    no_gitignore: bool = typer.Option(
+        False, "--no-gitignore", help="Do not honor the repository's .gitignore"
+    ),
+    exclude: list[str] = typer.Option(
+        [], "--exclude", help="Glob(s) of files/dirs to skip (repeatable)"
+    ),
+    include: list[str] = typer.Option(
+        [], "--include", help="Only scan files matching these glob(s) (repeatable)"
+    ),
 ) -> None:
     """Scan a codebase and generate clean documentation.
 
@@ -162,6 +171,9 @@ def scan(
             generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
             out_dir=out,
             static_only=use_static_only,
+            use_gitignore=not no_gitignore,
+            exclude_globs=tuple(exclude),
+            include_globs=tuple(include),
         )
     except CodebaseArchitectError as exc:
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
