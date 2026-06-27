@@ -1,10 +1,13 @@
 # Run the Codebase Architect web dashboard + REST API:
 #   docker compose up --build -d
 #
-# The app binds to 127.0.0.1:47800 on the host only (non-standard port, not
-# publicly exposed). Reach it over your tailnet with Tailscale Serve:
-#   tailscale serve --bg 47800
-# then open the MagicDNS URL it prints. Or, on the box itself: localhost:47800
+# By default the app binds to 127.0.0.1:47800 (host-only, non-standard port,
+# not publicly exposed). Two ways to reach it from your tailnet:
+#   1. Tailscale Serve (HTTPS, recommended):  tailscale serve --bg 47800
+#      then open the https://<host>.<tailnet>.ts.net URL it prints.
+#   2. Bind directly to your Tailscale IP:    set BIND_ADDR to it, e.g.
+#      echo 'BIND_ADDR=100.83.238.95' >> .env && docker compose up -d
+#      then open http://<tailscale-ip>:47800/
 #
 # To scan a local project, mount it (see the commented volume) and use its
 # in-container path as the scan "Source".
@@ -13,8 +16,9 @@ services:
     build: .
     image: codebase-architect
     ports:
-      # host-only bind; Tailscale Serve (or an SSH tunnel) exposes it to you.
-      - "127.0.0.1:47800:47800"
+      # Defaults to host-only; set BIND_ADDR to your Tailscale IP (or 0.0.0.0)
+      # to reach it directly. Tailscale Serve also works with the default bind.
+      - "${BIND_ADDR:-127.0.0.1}:47800:47800"
     environment:
       CA_AI__DEFAULT_PROVIDER: ${CA_AI__DEFAULT_PROVIDER:-claude}
       # Provide a key to enable the AI narrative; without it scans run static-only.
