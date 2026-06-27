@@ -77,8 +77,16 @@ class ScanPipeline:
         generated_at: str,
         out_dir: Path | None,
         static_only: bool = False,
+        use_gitignore: bool = True,
+        exclude_globs: tuple[str, ...] = (),
+        include_globs: tuple[str, ...] = (),
     ) -> ScanResult:
-        workspace = self._importer.execute(location)
+        workspace = self._importer.execute(
+            location,
+            use_gitignore=use_gitignore,
+            exclude_globs=exclude_globs,
+            include_globs=include_globs,
+        )
         model = self._model_builder.execute(workspace)
         graph = build_module_graph(model)
         architecture = infer_architecture(graph)
