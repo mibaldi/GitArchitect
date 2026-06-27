@@ -215,6 +215,16 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .scan-controls select { font-size: .78rem; padding: 5px 6px; width: auto; }
 .scan-list .tag { cursor: pointer; }
 
+/* interactive tour */
+.tour-hl { position: fixed; z-index: 95; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.55); transition: all .2s ease; pointer-events: none; }
+.tour-dim { position: fixed; inset: 0; z-index: 95; background: rgba(0,0,0,.55); }
+.tour-card { position: fixed; z-index: 96; width: 330px; max-width: 92vw; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 16px 18px; }
+.tour-card h4 { margin: 0 0 8px; font-size: 1rem; }
+.tour-card p { margin: 0 0 14px; font-size: .86rem; color: var(--text); line-height: 1.45; }
+.tour-card code { background: var(--surface-2); padding: 0 4px; border-radius: 4px; font-size: .82em; }
+.tour-nav { display: flex; align-items: center; gap: 8px; }
+.tour-step { flex: 1; font-size: .74rem; color: var(--muted); }
+
 .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -232,6 +242,7 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
     Codebase&nbsp;Architect <small>· architecture docs</small>
   </div>
   <div class="tools">
+    <button class="icon-btn" id="tourBtn" title="Interactive tutorial">?</button>
     <button class="icon-btn" id="themeBtn" title="Toggle theme">◐</button>
     <button class="icon-btn" id="specBtn" title="Functional specs">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -840,7 +851,81 @@ async function loadPage(slug) {
 
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
+/* interactive tour */
+const TOUR = [
+  { title: "Welcome to Codebase Architect", body: "A quick tour of the full flow: <b>scan</b> your projects, <b>describe</b> what they do, and generate architecture docs, coverage and end-to-end flow diagrams. Use <b>Next</b> (or the arrow keys)." },
+  { title: "1 · Scan a project", target: "#scanForm", open: "none", body: "Paste a Git URL or local path — or upload a <code>.zip</code>/<code>.tar.gz</code>. Add <b>tags</b> like <code>frontend</code>/<code>backend</code> to group projects, then <b>Run scan</b>. Scan each microservice separately." },
+  { title: "Your scans live here", target: "#scanFilter", open: "none", body: "Scans persist across restarts. <b>Filter</b> by title/tag/id and <b>sort</b> them; click a tag chip to filter by it." },
+  { title: "2 · Describe the product", target: "#specBtn", open: "none", body: "Open <b>Functional specs</b> to capture the <i>theory</i>: the functionalities, actors and flows your product should have." },
+  { title: "Create a functional spec", target: "#newSpecBtn", open: "spec", body: "A guided wizard: product &amp; actors, then each functionality with its <b>flow steps</b> (<code>actor &gt; action &gt; target</code>) and endpoints. Mark each flow <b>grounded</b> (tied to code) or <b>conceptual</b> (abstract)." },
+  { title: "Link projects &amp; generate", target: "#specPanel", open: "spec", body: "On a spec, <b>Coverage</b> links its scans into a group and produces a <b>coverage matrix</b> (implemented/partial/missing), the cross-project <b>API flow</b>, <b>sequence diagrams</b>, and a downloadable <b>document</b> (optionally AI-enriched)." },
+  { title: "3 · AI (optional)", target: "#settings", open: "settings", body: "Pick a provider, or a <b>remote CLI runner</b> (a logged-in Claude/Codex CLI — no API key). Use <b>Test runner connection</b>, then uncheck \"Static only\" when scanning." },
+  { title: "That's the full flow", open: "none", body: "Scan (with tags) → describe in a spec → link the group → get coverage, API flow, sequence diagrams and a document. Reopen this tour anytime with the <b>?</b> button. Happy documenting!" },
+];
+let tourStep = -1, tourEls = null;
+function ensureTourEls() {
+  if (tourEls) return;
+  const hl = document.createElement("div"); hl.className = "tour-hl"; hl.style.display = "none";
+  const card = document.createElement("div"); card.className = "tour-card"; card.style.display = "none";
+  document.body.append(hl, card);
+  tourEls = { hl, card };
+}
+function startTour() { ensureTourEls(); tourStep = 0; renderTour(); window.addEventListener("resize", positionTour); }
+function endTour() {
+  if (!tourEls) return;
+  tourEls.hl.style.display = "none"; tourEls.card.style.display = "none";
+  openSpec(false); openSettings(false);
+  window.removeEventListener("resize", positionTour);
+  SET("tourSeen", "1"); tourStep = -1;
+}
+function renderTour() {
+  const step = TOUR[tourStep];
+  openSettings(step.open === "settings");
+  openSpec(step.open === "spec");
+  const last = tourStep === TOUR.length - 1;
+  tourEls.card.style.display = "block";
+  tourEls.card.innerHTML =
+    `<h4>${step.title}</h4><p>${step.body}</p>` +
+    `<div class="tour-nav"><span class="tour-step">${tourStep + 1} / ${TOUR.length}</span>` +
+    `<button class="link-btn" id="tourSkip">Skip</button>` +
+    `<button class="icon-btn" id="tourBack" ${tourStep === 0 ? "disabled" : ""}>Back</button>` +
+    `<button class="btn" id="tourNext">${last ? "Done" : "Next"}</button></div>`;
+  $("tourSkip").onclick = endTour;
+  $("tourBack").onclick = () => { if (tourStep > 0) { tourStep--; renderTour(); } };
+  $("tourNext").onclick = () => { if (last) endTour(); else { tourStep++; renderTour(); } };
+  positionTour();
+  setTimeout(positionTour, 320);  // re-place after any panel slide-in
+}
+function positionTour() {
+  if (tourStep < 0 || !tourEls) return;
+  const step = TOUR[tourStep], hl = tourEls.hl, card = tourEls.card;
+  const target = step.target ? document.querySelector(step.target) : null;
+  const r = target ? target.getBoundingClientRect() : null;
+  if (r && r.width) {
+    const pad = 6;
+    hl.style.display = "block";
+    hl.style.left = (r.left - pad) + "px"; hl.style.top = (r.top - pad) + "px";
+    hl.style.width = (r.width + pad * 2) + "px"; hl.style.height = (r.height + pad * 2) + "px";
+    const cw = card.offsetWidth || 330, ch = card.offsetHeight || 180;
+    let top = r.bottom + 12; if (top + ch > innerHeight - 8) top = Math.max(8, r.top - ch - 12);
+    let left = Math.min(Math.max(8, r.left), innerWidth - cw - 8);
+    if (r.left > innerWidth - cw - 20) left = Math.max(8, r.left - cw - 12);  // panel on the right
+    card.style.left = left + "px"; card.style.top = top + "px"; card.style.transform = "";
+  } else {
+    hl.style.display = "none";
+    card.style.left = "50%"; card.style.top = "50%"; card.style.transform = "translate(-50%,-50%)";
+  }
+}
+$("tourBtn").onclick = startTour;
+document.addEventListener("keydown", e => {
+  if (tourStep < 0) return;
+  if (e.key === "Escape") endTour();
+  else if (e.key === "ArrowRight") $("tourNext") && $("tourNext").click();
+  else if (e.key === "ArrowLeft") $("tourBack") && $("tourBack").click();
+});
+
 refreshScans();
+if (!LS("tourSeen")) setTimeout(startTour, 700);
 </script>
 </body>
 </html>
