@@ -270,6 +270,22 @@ def test_sequence_diagrams_endpoint(client: TestClient) -> None:
     assert "Frontend" in mermaid and "Backend" in mermaid
 
 
+def test_spec_document_downloadable(client: TestClient, project: Path) -> None:
+    scan_id = _submit(client, project)
+    spec_id = client.post("/specs", json=_spec_payload()).json()["id"]
+    client.post(f"/specs/{spec_id}/scans/{scan_id}")
+
+    resp = client.get(f"/specs/{spec_id}/document")
+    assert resp.status_code == 200
+    assert "text/markdown" in resp.headers["content-type"]
+    assert "attachment" in resp.headers["content-disposition"]
+    body = resp.text
+    assert "# Demo — Functional documentation" in body
+    assert "## Functionalities" in body
+    assert "sequenceDiagram" in body
+    assert "## Cross-project API flow" in body
+
+
 def test_scans_persist_across_restart(tmp_path: Path, project: Path) -> None:
     settings = Settings(
         workspaces_dir=str(tmp_path / "ws"),

@@ -59,6 +59,17 @@ def test_spec_sequences_one_per_feature() -> None:
     assert diagrams[0][1].startswith("sequenceDiagram")
 
 
+def test_conceptual_detail_omits_code_grounding() -> None:
+    import dataclasses
+
+    feature = dataclasses.replace(_feature(), detail="conceptual")
+    code = feature_sequence(feature, confirmed={"/users"})
+    assert "found in code" not in code  # no concrete grounding notes
+    assert "POST /users" not in code
+    # the authored flow is still there
+    assert "introduce email + telefono" in code
+
+
 def test_empty_flow_still_valid() -> None:
     feature = SpecFeature(name="Empty", systems=("A",))
     code = feature_sequence(feature)

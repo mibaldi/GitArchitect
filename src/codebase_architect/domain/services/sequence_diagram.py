@@ -66,7 +66,9 @@ def feature_sequence(feature: SpecFeature, *, confirmed: set[str] | None = None)
         lines.append(f"  {source} {arrow} {target} : {_message(step.action)}")
 
     _emit_alt(lines, feature, alias, participants)
-    _emit_endpoint_notes(lines, feature, alias, participants, confirmed)
+    # Conceptual flows stay abstract: no concrete code-grounding annotations.
+    if feature.detail != "conceptual":
+        _emit_endpoint_notes(lines, feature, alias, participants, confirmed)
     return "\n".join(lines)
 
 

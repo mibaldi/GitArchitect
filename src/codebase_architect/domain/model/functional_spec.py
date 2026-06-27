@@ -32,7 +32,13 @@ class EndpointRef:
 
 @dataclass(frozen=True)
 class SpecFeature:
-    """A single functionality, as filled in the template wizard."""
+    """A single functionality, as filled in the template wizard.
+
+    ``detail`` controls how its diagram is rendered: ``grounded`` ties it to the
+    scanned code (endpoint ✓/✗ evidence), ``conceptual`` keeps it abstract — just
+    the authored flow (e.g. talking about "Frontend"/"Backend" rather than a
+    concrete project).
+    """
 
     name: str
     actors: tuple[str, ...] = ()
@@ -44,6 +50,7 @@ class SpecFeature:
     endpoints: tuple[EndpointRef, ...] = ()
     data_entities: tuple[str, ...] = ()
     acceptance_criteria: tuple[str, ...] = ()
+    detail: str = "grounded"  # "grounded" | "conceptual"
 
 
 @dataclass

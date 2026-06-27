@@ -236,6 +236,7 @@ class SpecFeatureSchema(BaseModel):
     endpoints: list[EndpointRefSchema] = []
     data_entities: list[str] = []
     acceptance_criteria: list[str] = []
+    detail: str = "grounded"
 
 
 class FunctionalSpecPayload(BaseModel):
@@ -282,6 +283,7 @@ def _feature_to_domain(f: SpecFeatureSchema) -> SpecFeature:
         endpoints=tuple(EndpointRef(e.method, e.path) for e in f.endpoints),
         data_entities=tuple(f.data_entities),
         acceptance_criteria=tuple(f.acceptance_criteria),
+        detail=f.detail if f.detail in ("grounded", "conceptual") else "grounded",
     )
 
 
@@ -308,6 +310,7 @@ def spec_to_response(spec: FunctionalSpec) -> FunctionalSpecResponse:
                 ],
                 data_entities=list(f.data_entities),
                 acceptance_criteria=list(f.acceptance_criteria),
+                detail=f.detail,
             )
             for f in spec.features
         ],

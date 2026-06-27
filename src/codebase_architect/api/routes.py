@@ -15,7 +15,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from codebase_architect.api.dashboard import INDEX_HTML
 from codebase_architect.api.schemas import (
@@ -49,10 +49,16 @@ from codebase_architect.application.services.scan_service import (
     ScanStatus,
 )
 from codebase_architect.application.services.spec_service import SpecService
+from codebase_architect.domain.model.code import ParsedFile
+from codebase_architect.domain.model.code_model import CodeModel
+from codebase_architect.domain.model.entrypoint import Entrypoint
+from codebase_architect.domain.model.functional_spec import FunctionalSpec
+from codebase_architect.domain.model.module import Module, ModuleEdge, ModuleGraph
 from codebase_architect.domain.services.api_match import ScanSurface, match_api_flows
 from codebase_architect.domain.services.http_flows import collect_http
 from codebase_architect.domain.services.reconcile import reconcile_spec
 from codebase_architect.domain.services.sequence_diagram import spec_sequences
+from codebase_architect.domain.services.spec_document import build_spec_document
 from codebase_architect.infrastructure.export.zip_archive import zip_directory
 from codebase_architect.shared.errors import NotFoundError
 
@@ -405,6 +411,63 @@ def sequence_diagrams(
         if job.status is ScanStatus.DONE and job.result is not None:
             routes, calls = collect_http(job.result.code_model)
             surfaces.append(ScanSurface(sid, tuple(routes), tuple(calls)))
-    graph = match_api_flows(surfaces)
-    confirmed = [edge.path for edge in graph.edges]
+    # An endpoint is "found in code" when a linked scan exposes it as a route.
+    confirmed = [r.path for s in surfaces for r in s.routes]
     return sequences_to_response(spec_id, spec_sequences(spec, confirmed_paths=confirmed))
+
+
+def _spec_group_facts(
+    spec_id: str, specs: SpecService, scans: ScanService
+) -> tuple[FunctionalSpec, list[ScanSurface], list[Entrypoint], ModuleGraph, CodeModel]:
+    """Merge the facts of a spec's linked, completed scans for group analysis."""
+    try:
+        spec = specs.get(spec_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    parsed: list[ParsedFile] = []
+    modules: list[Module] = []
+    edges: list[ModuleEdge] = []
+    entrypoints: list[Entrypoint] = []
+    surfaces: list[ScanSurface] = []
+    for sid in spec.linked_scan_ids:
+        try:
+            job = scans.get(sid)
+        except NotFoundError:
+            continue
+        if job.status is not ScanStatus.DONE or job.result is None:
+            continue
+        result = job.result
+        parsed.extend(result.code_model.parsed_files)
+        modules.extend(result.module_graph.modules)
+        edges.extend(result.module_graph.edges)
+        entrypoints.extend(result.entrypoints)
+        routes, calls = collect_http(result.code_model)
+        surfaces.append(ScanSurface(sid, tuple(routes), tuple(calls)))
+    model = CodeModel(parsed_files=parsed)
+    graph = ModuleGraph(modules=modules, edges=edges)
+    return spec, surfaces, entrypoints, graph, model
+
+
+@router.get("/specs/{spec_id}/document")
+def spec_document(
+    spec_id: str,
+    specs: SpecService = Depends(get_spec_service),
+    scans: ScanService = Depends(get_service),
+) -> Response:
+    """A single Markdown document: coverage + sequence diagrams + API flow."""
+    spec, surfaces, entrypoints, graph, model = _spec_group_facts(spec_id, specs, scans)
+    report = reconcile_spec(
+        spec, scan_id="group", entrypoints=entrypoints, graph=graph, model=model
+    )
+    api_flow = match_api_flows(surfaces)
+    confirmed = [r.path for s in surfaces for r in s.routes]
+    sequences = spec_sequences(spec, confirmed_paths=confirmed)
+    markdown = build_spec_document(
+        spec, report=report, api_flow=api_flow, sequences=sequences
+    )
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in spec.product) or "spec"
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe}.md"'},
+    )
