@@ -18,6 +18,7 @@ from codebase_architect.domain.ports.source_provider import SourceProvider
 from codebase_architect.infrastructure.source_providers._common import read_git_head_sha
 from codebase_architect.shared.errors import CapabilityUnavailableError
 from codebase_architect.shared.ids import new_id
+from codebase_architect.shared.redaction import redact_url_credentials
 
 _REMOTE_PREFIXES = ("git@", "git://", "ssh://")
 
@@ -46,9 +47,12 @@ class GitRemoteSourceProvider(SourceProvider):
         cmd = [git, "clone", "--depth", str(self._depth), location.raw, str(dest)]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise CapabilityUnavailableError(
+            # Redact any credentials embedded in the URL (and echoed by git) so
+            # they never reach logs or the API error response.
+            message = redact_url_credentials(
                 f"git clone failed for {location.raw}:\n{result.stderr.strip()}"
             )
+            raise CapabilityUnavailableError(message)
         sha = read_git_head_sha(dest)
         # Drop the .git directory: analysis is read-only and never needs history.
         git_dir = dest / ".git"

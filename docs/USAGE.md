@@ -35,7 +35,36 @@ architect version
 (AI), `entrypoints.md`, `flows.md`, `dependencies.md`, `security.md`.
 
 Useful flags: `--title`, `--ai-provider <name>`, `--renderer <name>`,
-`--no-ai-cache`.
+`--no-ai-cache`, `--include <glob>`, `--exclude <glob>`, `--no-gitignore`.
+By default a repository's `.gitignore` is honored and common build/output dirs
+are skipped.
+
+## Private repositories
+
+The Git provider just runs `git clone`, so authenticate the way `git` already
+expects. Three options, easiest first:
+
+1. **Scan a local checkout (no token in the tool).** Clone it yourself where you
+   already have credentials, then point the scan at the folder. With Docker,
+   mount it read-only and use its in-container path:
+   ```bash
+   git clone git@github.com:me/private.git ./private
+   architect scan ./private --out ./docs
+   # Docker: mount `- ./private:/scan/private:ro` then scan "/scan/private"
+   ```
+2. **HTTPS + a read-only token in the URL.** Use a token with read access to the
+   repository's contents:
+   ```bash
+   # GitHub (fine-grained PAT, Contents: read)
+   architect scan https://x-access-token:<TOKEN>@github.com/me/private.git --out ./docs
+   # GitLab:    https://oauth2:<TOKEN>@gitlab.com/me/private.git
+   # Bitbucket: https://x-token-auth:<TOKEN>@bitbucket.org/me/private.git
+   ```
+   Credentials in the source URL are redacted from logs and API errors, but
+   prefer option 1 or 3 if you'd rather the token never enter the tool.
+3. **SSH.** Use `git@host:me/private.git` with a (read-only deploy) key available
+   to `git`. In the Docker image add `openssh-client` and mount the key, since
+   the slim image ships `git` without an SSH client.
 
 ## AI providers
 

@@ -10,6 +10,7 @@ from codebase_architect.domain.model.source import SourceLocation
 from codebase_architect.domain.model.workspace import Workspace
 from codebase_architect.shared.ids import new_id
 from codebase_architect.shared.logging import get_logger
+from codebase_architect.shared.redaction import redact_url_credentials
 
 logger = get_logger(__name__)
 
@@ -40,7 +41,7 @@ class ImportSourceUseCase:
 
         logger.info(
             "importing_source",
-            location=location.raw,
+            location=redact_url_credentials(location.raw),
             provider=type(provider).__name__,
             source_type=provider.source_type.value,
             dest=str(dest),

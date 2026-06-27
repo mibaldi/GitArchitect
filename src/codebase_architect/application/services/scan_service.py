@@ -23,6 +23,7 @@ from codebase_architect.domain.ports.ai_provider import AIProvider
 from codebase_architect.shared.errors import CodebaseArchitectError, NotFoundError
 from codebase_architect.shared.ids import new_id
 from codebase_architect.shared.logging import get_logger
+from codebase_architect.shared.redaction import redact_url_credentials
 
 logger = get_logger(__name__)
 
@@ -81,7 +82,9 @@ class ScanService:
         job = ScanJob(id=new_id("scan"), options=options, created_at=self._clock())
         with self._lock:
             self._jobs[job.id] = job
-        logger.info("scan_submitted", scan_id=job.id, location=options.location)
+        logger.info(
+            "scan_submitted", scan_id=job.id, location=redact_url_credentials(options.location)
+        )
         return job
 
     def get(self, scan_id: str) -> ScanJob:
