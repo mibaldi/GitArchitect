@@ -161,6 +161,9 @@ travel with each scan request (in memory, never persisted or logged).
 architect serve            # http://127.0.0.1:47800  (non-standard port)
 ```
 
+A built-in **interactive tour** (the **?** button, and auto-shown on first visit)
+walks through the whole flow end to end.
+
 Open `http://127.0.0.1:47800/` for the dashboard: enter a source **or upload a
 `.zip` / `.tar.gz`**, launch a scan, watch the status, **download** the `.zip`,
 and **view** each page (Markdown + Mermaid) rendered live. Uploaded archives are
