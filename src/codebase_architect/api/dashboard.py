@@ -21,18 +21,23 @@ INDEX_HTML = r"""<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
+/* "Blueprint": grounded in the subject — software architecture / technical
+   drafting. Cool drafting-paper light + blueprint-navy dark, azure accent,
+   a faint measured grid, and monospace for every code identifier. */
 :root {
-  --bg: #f6f6f4; --surface: #ffffff; --surface-2: #fbfbfa; --line: #e6e5e0;
-  --text: #1b1d21; --muted: #6c727c; --accent: #c2520a; --accent-soft: #fdf0e7;
-  --ok: #15803d; --info: #1d4ed8; --warn: #b45309; --err: #b91c1c;
-  --shadow: 0 1px 2px rgba(20,20,20,.06), 0 8px 24px rgba(20,20,20,.05);
+  --bg: #eaeef3; --surface: #ffffff; --surface-2: #f4f7fa; --line: #d3dce5;
+  --text: #122031; --muted: #5f6e80; --accent: #0b62d6; --accent-soft: #e3edfb;
+  --grid: rgba(18,42,72,.05);
+  --ok: #0f7a4a; --info: #0b62d6; --warn: #a4660a; --err: #c0322b;
+  --shadow: 0 1px 2px rgba(18,32,49,.06), 0 10px 30px rgba(18,32,49,.06);
   --radius: 12px; --mono: "IBM Plex Mono", ui-monospace, monospace;
 }
 html[data-theme="dark"] {
-  --bg: #0d0f13; --surface: #15181e; --surface-2: #11141a; --line: #262b34;
-  --text: #e7e9ec; --muted: #8b939e; --accent: #f0852f; --accent-soft: #2a1c10;
-  --ok: #4ade80; --info: #60a5fa; --warn: #fbbf24; --err: #f87171;
-  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.35);
+  --bg: #0a1019; --surface: #0f1a27; --surface-2: #0c1521; --line: #1d2c3d;
+  --text: #d9e4f0; --muted: #7e8fa3; --accent: #4c9bff; --accent-soft: #112236;
+  --grid: rgba(120,160,210,.06);
+  --ok: #34d399; --info: #4c9bff; --warn: #f1b24a; --err: #f4736b;
+  --shadow: 0 1px 2px rgba(0,0,0,.45), 0 14px 36px rgba(0,0,0,.4);
 }
 * { box-sizing: border-box; }
 body {
@@ -67,7 +72,12 @@ button { font: inherit; cursor: pointer; }
 /* layout */
 .layout { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 60px); }
 .sidebar { border-right: 1px solid var(--line); padding: 18px; overflow: auto; background: var(--surface-2); }
-.main { padding: 24px 28px; overflow: auto; }
+.main {
+  padding: 24px 28px; overflow: auto;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 30px 30px; background-position: -1px -1px;
+}
 
 /* card / form */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
@@ -215,7 +225,7 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/>
       </svg>
-      <div>Submit a scan or pick one from the list.</div>
+      <div>Point it at a repo, folder or archive, then read its architecture.</div>
     </div>
   </main>
 </div>
