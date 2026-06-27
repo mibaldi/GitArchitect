@@ -23,6 +23,7 @@ from codebase_architect.infrastructure.detection.language_detector import Extens
 from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector
 from codebase_architect.infrastructure.export.folder_exporter import FolderExporter
 from codebase_architect.infrastructure.parsing.tree_sitter_parser import TreeSitterParser
+from codebase_architect.infrastructure.persistence.file_scan_store import FileScanStore
 from codebase_architect.infrastructure.rendering.markdown_renderer import MarkdownMermaidRenderer
 from codebase_architect.infrastructure.security.secret_scanner import RegexSecretScanner
 from codebase_architect.infrastructure.source_providers import default_source_providers
@@ -63,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.0.0",
         summary="Scan any codebase and generate clean architecture documentation.",
     )
-    app.state.scan_service = ScanService(build_pipeline, artifacts_dir)
+    store = FileScanStore(Path(settings.data_dir) / "scan-records")
+    app.state.scan_service = ScanService(build_pipeline, artifacts_dir, store=store)
     app.include_router(router)
     return app
