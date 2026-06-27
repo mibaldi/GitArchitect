@@ -19,6 +19,25 @@ A container's host bind decides who can reach it:
 
 Find this host's Tailscale IP with `tailscale ip -4` (e.g. `100.83.238.95`).
 
+### The other door: Hostinger's public wildcard proxy
+
+Separately from the tailnet, Hostinger publishes a wildcard hostname
+`*.srv1188691.hstgr.cloud` pointing at the VPS **public** IP. The n8n template
+also installed **Traefik** (`n8n-traefik-1`, listening on `0.0.0.0:80/443`) as a
+reverse proxy with TLS. So some services are reachable from the **public
+internet** by subdomain, e.g.:
+
+```
+https://n8n.srv1188691.hstgr.cloud/      # public: browser -> public IP -> Traefik:443 -> n8n
+https://srv1188691.hstgr.cloud/          # hermes, same proxy
+```
+
+This is a real, internet-facing door — protected only by each app's own login.
+If the goal is "tailnet only", either remove the app's Traefik labels, stop
+publishing Traefik on `0.0.0.0`, or block `80/443` at the firewall — but note the
+same proxy also fronts **hermes**, so closing it removes hermes' public web
+access too (tailnet access via the forwarder still works).
+
 ## Friendlier URLs: MagicDNS
 
 You don't have to memorise the IP. With **MagicDNS** (enabled in the Tailscale
