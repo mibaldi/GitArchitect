@@ -19,6 +19,23 @@ A container's host bind decides who can reach it:
 
 Find this host's Tailscale IP with `tailscale ip -4` (e.g. `100.83.238.95`).
 
+## Friendlier URLs: MagicDNS
+
+You don't have to memorise the IP. With **MagicDNS** (enabled in the Tailscale
+admin console → DNS; on by default) every node also answers on its name, so the
+same services are reachable as:
+
+```
+http://srv1188691.tail64487f.ts.net:47800/     # or the short name: srv1188691
+```
+
+Nothing changes on the server: Docker still binds to the Tailscale **IP** (a
+`ports:` entry needs an IP, not a hostname), and the Tailscale IP is stable per
+node. MagicDNS just resolves the name to that IP on the client side. Optional
+nicety: rename the machine in the admin console for a shorter name (e.g.
+`vps` → `http://vps:47800/`). `scripts/tailnet-access.sh` prints the MagicDNS
+name and uses it in the URLs when available.
+
 ## Service / port map
 
 The human-readable index of the box. Keep it current.
@@ -124,9 +141,9 @@ local project, mount it read-only (see the commented volume in
 
 ```bash
 docker ps                                      # every container Up, bound to 100.x.y.z
-tailscale ip -4                                # host still on the tailnet
-curl -I http://100.83.238.95:47800/health      # architect healthy
+./scripts/tailnet-access.sh                    # IP + MagicDNS name + up/down per port
 ```
 
-`scripts/tailnet-access.sh` prints the Tailscale IP and the same port map for a
-quick "what's where" at any time.
+`scripts/tailnet-access.sh` is the quick "what's where": it prints the Tailscale
+IP and MagicDNS name and **probes every port**, so a service that didn't come
+back shows `down` immediately.
