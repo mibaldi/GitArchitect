@@ -6,6 +6,12 @@ from pydantic import BaseModel, Field
 
 from codebase_architect.application.pipeline.scan_pipeline import ScanResult
 from codebase_architect.application.services.scan_service import ScanJob, ScanStatus
+from codebase_architect.domain.model.functional_spec import (
+    EndpointRef,
+    FlowStep,
+    FunctionalSpec,
+    SpecFeature,
+)
 from codebase_architect.shared.redaction import redact_url_credentials
 
 # -- Requests ---------------------------------------------------------------
@@ -200,4 +206,119 @@ def to_architecture_response(result: ScanResult) -> ArchitectureResponse:
             EdgeSchema(source=e.source, target=e.target, weight=e.weight)
             for e in result.module_graph.edges
         ],
+    )
+
+
+# -- Functional spec (phase B) ----------------------------------------------
+
+
+class FlowStepSchema(BaseModel):
+    actor: str = ""
+    action: str = ""
+    target: str = ""
+
+
+class EndpointRefSchema(BaseModel):
+    method: str = ""
+    path: str = ""
+
+
+class SpecFeatureSchema(BaseModel):
+    name: str
+    actors: list[str] = []
+    goal: str = ""
+    preconditions: list[str] = []
+    main_flow: list[FlowStepSchema] = []
+    alternative_flows: list[str] = []
+    systems: list[str] = []
+    endpoints: list[EndpointRefSchema] = []
+    data_entities: list[str] = []
+    acceptance_criteria: list[str] = []
+
+
+class FunctionalSpecPayload(BaseModel):
+    product: str
+    objective: str = ""
+    actors: list[str] = []
+    features: list[SpecFeatureSchema] = []
+    linked_scan_ids: list[str] = []
+
+
+class FunctionalSpecResponse(FunctionalSpecPayload):
+    id: str
+    created_at: str
+    updated_at: str
+
+
+class SpecSummaryResponse(BaseModel):
+    id: str
+    product: str
+    features: int
+    updated_at: str
+
+
+def spec_payload_to_domain(payload: FunctionalSpecPayload, spec_id: str = "") -> FunctionalSpec:
+    return FunctionalSpec(
+        id=spec_id,
+        product=payload.product,
+        objective=payload.objective,
+        actors=tuple(payload.actors),
+        features=tuple(_feature_to_domain(f) for f in payload.features),
+        linked_scan_ids=tuple(payload.linked_scan_ids),
+    )
+
+
+def _feature_to_domain(f: SpecFeatureSchema) -> SpecFeature:
+    return SpecFeature(
+        name=f.name,
+        actors=tuple(f.actors),
+        goal=f.goal,
+        preconditions=tuple(f.preconditions),
+        main_flow=tuple(FlowStep(s.actor, s.action, s.target) for s in f.main_flow),
+        alternative_flows=tuple(f.alternative_flows),
+        systems=tuple(f.systems),
+        endpoints=tuple(EndpointRef(e.method, e.path) for e in f.endpoints),
+        data_entities=tuple(f.data_entities),
+        acceptance_criteria=tuple(f.acceptance_criteria),
+    )
+
+
+def spec_to_response(spec: FunctionalSpec) -> FunctionalSpecResponse:
+    return FunctionalSpecResponse(
+        id=spec.id,
+        product=spec.product,
+        objective=spec.objective,
+        actors=list(spec.actors),
+        features=[
+            SpecFeatureSchema(
+                name=f.name,
+                actors=list(f.actors),
+                goal=f.goal,
+                preconditions=list(f.preconditions),
+                main_flow=[
+                    FlowStepSchema(actor=s.actor, action=s.action, target=s.target)
+                    for s in f.main_flow
+                ],
+                alternative_flows=list(f.alternative_flows),
+                systems=list(f.systems),
+                endpoints=[
+                    EndpointRefSchema(method=e.method, path=e.path) for e in f.endpoints
+                ],
+                data_entities=list(f.data_entities),
+                acceptance_criteria=list(f.acceptance_criteria),
+            )
+            for f in spec.features
+        ],
+        linked_scan_ids=list(spec.linked_scan_ids),
+        created_at=spec.created_at,
+        updated_at=spec.updated_at,
+    )
+
+
+def spec_summary(spec: FunctionalSpec) -> SpecSummaryResponse:
+    return SpecSummaryResponse(
+        id=spec.id,
+        product=spec.product,
+        features=len(spec.features),
+        updated_at=spec.updated_at,
     )
