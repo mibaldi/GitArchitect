@@ -26,15 +26,23 @@ The human-readable index of the box. Keep it current.
 | Service | Container | Host bind | URL |
 |---------|-----------|-----------|-----|
 | Codebase Architect | `gitarchitect-api-1` | `100.83.238.95:47800` | `http://100.83.238.95:47800/` |
-| hermes | _memory-api_ | `100.83.238.95:8000` | `http://100.83.238.95:8000/` |
+| engramunified | _memory-api_ | `100.83.238.95:8000` | `http://100.83.238.95:8000/` |
 | engram MCP | _memory-mcp_ | `100.83.238.95:8765` | `http://100.83.238.95:8765/` |
 | n8n | `n8n-n8n-1` | `100.83.238.95:5678` | `http://100.83.238.95:5678/` |
 | vikunja | `vikunja-1` | `100.83.238.95:32777` | `http://100.83.238.95:32777/` |
 | mibaldiutils | `mibaldiutils-web-1` | `100.83.238.95:8088` | `http://100.83.238.95:8088/` |
 | postgres (engram) | `*-postgres-1` | `100.83.238.95:5432` | internal/tailnet only |
 
-> Anything still bound to `0.0.0.0` (e.g. vikunja `0.0.0.0:32777`, Traefik
-> `0.0.0.0:80/443`) is public — repoint it to the Tailscale IP or remove it.
+> **hermes** is the Hostinger-managed agent dashboard on port `4860`. It binds
+> `0.0.0.0:4860` *inside its own container* (docker IP `172.19.0.2:4860`) and is
+> reached through Hostinger's proxy at `srv1188691.hstgr.cloud`, not on the host
+> or tailnet. Leave it to Hostinger. To also expose it on the tailnet, publish
+> `4860` on the Tailscale IP from its compose (`100.83.238.95:4860:4860`).
+
+> Anything bound to `0.0.0.0` **on the host** (e.g. vikunja `0.0.0.0:32777`,
+> Traefik `0.0.0.0:80/443`) is public — repoint it to the Tailscale IP or remove
+> it. (A container's *internal* `0.0.0.0` bind, like hermes', is not host-public
+> unless a `ports:` entry publishes it.)
 
 ## Putting a service on the Tailscale IP
 
