@@ -23,6 +23,7 @@ from codebase_architect.api.schemas import (
     ArchitectureResponse,
     CodeModelResponse,
     DocumentationResponse,
+    DocumentRequest,
     FunctionalSpecPayload,
     FunctionalSpecResponse,
     ReconciliationResponse,
@@ -42,6 +43,7 @@ from codebase_architect.api.schemas import (
     to_documentation_response,
     to_status_response,
 )
+from codebase_architect.application.registries.ai_registry import build_ai_provider
 from codebase_architect.application.services.scan_service import (
     ScanJob,
     ScanOptions,
@@ -49,6 +51,7 @@ from codebase_architect.application.services.scan_service import (
     ScanStatus,
 )
 from codebase_architect.application.services.spec_service import SpecService
+from codebase_architect.application.use_cases.enrich_flows import enrich_spec_flows
 from codebase_architect.domain.model.code import ParsedFile
 from codebase_architect.domain.model.code_model import CodeModel
 from codebase_architect.domain.model.entrypoint import Entrypoint
@@ -448,13 +451,19 @@ def _spec_group_facts(
     return spec, surfaces, entrypoints, graph, model
 
 
-@router.get("/specs/{spec_id}/document")
+@router.post("/specs/{spec_id}/document")
 def spec_document(
     spec_id: str,
+    options: DocumentRequest | None = None,
     specs: SpecService = Depends(get_spec_service),
     scans: ScanService = Depends(get_service),
 ) -> Response:
-    """A single Markdown document: coverage + sequence diagrams + API flow."""
+    """A single Markdown document: coverage + sequence diagrams + API flow.
+
+    Pass ``enrich: true`` with AI settings to weave in a grounded narrative per
+    functionality; without them the document is fully deterministic.
+    """
+    options = options or DocumentRequest()
     spec, surfaces, entrypoints, graph, model = _spec_group_facts(spec_id, specs, scans)
     report = reconcile_spec(
         spec, scan_id="group", entrypoints=entrypoints, graph=graph, model=model
@@ -462,8 +471,20 @@ def spec_document(
     api_flow = match_api_flows(surfaces)
     confirmed = [r.path for s in surfaces for r in s.routes]
     sequences = spec_sequences(spec, confirmed_paths=confirmed)
+
+    narratives: dict[str, str] = {}
+    if options.enrich:
+        provider = build_ai_provider(
+            options.ai_provider,
+            api_key=options.ai_api_key,
+            base_url=options.ai_base_url,
+            model=options.ai_model,
+        )
+        if provider.available():
+            narratives = enrich_spec_flows(provider, spec, confirmed_paths=confirmed)
+
     markdown = build_spec_document(
-        spec, report=report, api_flow=api_flow, sequences=sequences
+        spec, report=report, api_flow=api_flow, sequences=sequences, narratives=narratives
     )
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in spec.product) or "spec"
     return Response(

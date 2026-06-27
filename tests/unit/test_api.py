@@ -275,7 +275,7 @@ def test_spec_document_downloadable(client: TestClient, project: Path) -> None:
     spec_id = client.post("/specs", json=_spec_payload()).json()["id"]
     client.post(f"/specs/{spec_id}/scans/{scan_id}")
 
-    resp = client.get(f"/specs/{spec_id}/document")
+    resp = client.post(f"/specs/{spec_id}/document", json={})
     assert resp.status_code == 200
     assert "text/markdown" in resp.headers["content-type"]
     assert "attachment" in resp.headers["content-disposition"]
