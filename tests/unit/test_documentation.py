@@ -126,7 +126,7 @@ def test_narrative_is_woven_into_documentation() -> None:
     assert "Returns a greeting." in files["features.md"]
 
 
-def test_features_page_notes_static_only_when_no_narrative() -> None:
+def test_features_page_derives_static_catalog_without_narrative() -> None:
     docs = build_documentation(
         title="Demo",
         generated_at="t",
@@ -134,8 +134,14 @@ def test_features_page_notes_static_only_when_no_narrative() -> None:
         model=CodeModel(),
         graph=build_module_graph(CodeModel()),
         architecture=Architecture(),
-        entrypoints=[],
+        entrypoints=[
+            Entrypoint("GreetController", EntrypointKind.HTTP_ENDPOINT, "web/G.java", "web"),
+        ],
         narrative=None,
     )
     files = {f.path: f.content for f in MarkdownMermaidRenderer().render(docs)}
-    assert "static-only" in files["features.md"]
+    body = files["features.md"]
+    # Static catalog is present and clearly labelled as derived without AI.
+    assert "HTTP API" in body
+    assert "_(static)_" in body
+    assert "Derived statically" in body
