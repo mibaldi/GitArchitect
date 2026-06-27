@@ -26,10 +26,11 @@ RUN useradd --create-home app \
     && chown -R app:app /data /workspaces
 USER app
 
-EXPOSE 8000
+# Non-standard port to avoid clashing with other services on the host.
+EXPOSE 47800
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request,sys; \
-sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
+sys.exit(0 if urllib.request.urlopen('http://localhost:47800/health').status==200 else 1)"
 
-CMD ["architect", "serve", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["architect", "serve", "--host", "0.0.0.0", "--port", "47800"]

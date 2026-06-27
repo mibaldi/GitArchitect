@@ -55,40 +55,48 @@ Narratives are cached (keyed by the analysis facts + provider), so re-scanning
 an unchanged codebase reuses the result and spends 0 tokens. Bypass with
 `--no-ai-cache` or `CA_AI__CACHE_ENABLED=false`.
 
-## REST API
+## Web dashboard + REST API
 
 ```bash
-architect serve --port 8000
-
-curl localhost:8000/health
-# Submit a scan (async): returns 202 {id, status}
-curl -X POST localhost:8000/scans -H 'content-type: application/json' \
-  -d '{"location": "/path/to/project", "static_only": true}'
-# Poll status until "done", then read the docs / download the bundle
-curl localhost:8000/scans/<id>
-curl localhost:8000/scans/<id>/documentation
-curl localhost:8000/scans/<id>/architecture
-curl localhost:8000/scans/<id>/code-model
-curl -OJ localhost:8000/scans/<id>/download   # documentation.zip
+architect serve            # http://127.0.0.1:47800  (non-standard port)
 ```
 
-OpenAPI docs are served at `/docs`.
+Open `http://127.0.0.1:47800/` for the dashboard: choose a source, launch a
+scan, watch the status, **download** the `.zip`, and **view** each page
+(Markdown + Mermaid) rendered live. OpenAPI docs are at `/docs`.
+
+REST endpoints (everything the dashboard uses):
+
+```bash
+curl localhost:47800/health
+# Submit a scan (async): returns 202 {id, status}
+curl -X POST localhost:47800/scans -H 'content-type: application/json' \
+  -d '{"location": "/path/to/project", "static_only": true}'
+# Poll status until "done", then read the docs / download the bundle
+curl localhost:47800/scans/<id>
+curl localhost:47800/scans/<id>/documentation
+curl localhost:47800/scans/<id>/pages/architecture
+curl localhost:47800/scans/<id>/architecture
+curl -OJ localhost:47800/scans/<id>/download   # documentation.zip
+```
 
 ## Docker Compose
 
 ```bash
-docker compose up --build
-curl localhost:8000/health
+docker compose up --build -d
+curl localhost:47800/health
 ```
 
-To scan a local project via the API, mount it and POST its in-container path —
-uncomment the `./myproject:/scan/myproject:ro` volume in `docker-compose.yml`,
-then:
+The container binds to `127.0.0.1:47800` (host-only, non-standard port). To
+reach the dashboard over your tailnet without exposing anything publicly, use
+Tailscale Serve on the VPS:
 
 ```bash
-curl -X POST localhost:8000/scans -H 'content-type: application/json' \
-  -d '{"location": "/scan/myproject", "static_only": true}'
+tailscale serve --bg 47800      # serves it on your MagicDNS hostname over HTTPS
 ```
+
+To scan a local project, mount it and use its in-container path as the Source —
+uncomment the `./myproject:/scan/myproject:ro` volume in `docker-compose.yml`.
 
 Set `ANTHROPIC_API_KEY` (env or `.env`) to enable the AI narrative. The
 `postgres`/`redis` services are opt-in for future phases:

@@ -55,6 +55,22 @@ def test_health(client: TestClient) -> None:
     assert client.get("/health").json() == {"status": "ok"}
 
 
+def test_dashboard_served_at_root(client: TestClient) -> None:
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Codebase Architect" in response.text
+
+
+def test_page_content_endpoint(client: TestClient, project: Path) -> None:
+    scan_id = _submit(client, project)
+    page = client.get(f"/scans/{scan_id}/pages/README").json()
+    assert page["slug"] == "README"
+    assert page["markdown"].startswith("# ")
+    # Unknown page is a 404.
+    assert client.get(f"/scans/{scan_id}/pages/nope").status_code == 404
+
+
 def test_scan_lifecycle_and_summary(client: TestClient, project: Path) -> None:
     scan_id = _submit(client, project)
 

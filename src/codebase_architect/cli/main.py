@@ -61,9 +61,9 @@ def version() -> None:
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
-    port: int = typer.Option(8000, "--port", help="Bind port"),
+    port: int = typer.Option(47800, "--port", help="Bind port (non-standard by default)"),
 ) -> None:
-    """Run the REST API (requires the 'api' extra)."""
+    """Run the REST API + web dashboard (requires the 'api' extra)."""
     try:
         import uvicorn
     except ModuleNotFoundError as exc:
