@@ -400,6 +400,23 @@ def api_flow_to_response(spec_id: str, graph: ApiFlowGraph) -> ApiFlowResponse:
     )
 
 
+class FeatureSequenceSchema(BaseModel):
+    feature: str
+    mermaid: str
+
+
+class SequenceResponse(BaseModel):
+    spec_id: str
+    diagrams: list[FeatureSequenceSchema]
+
+
+def sequences_to_response(spec_id: str, diagrams: list[tuple[str, str]]) -> SequenceResponse:
+    return SequenceResponse(
+        spec_id=spec_id,
+        diagrams=[FeatureSequenceSchema(feature=name, mermaid=code) for name, code in diagrams],
+    )
+
+
 def reconciliation_to_response(report: ReconciliationReport) -> ReconciliationResponse:
     return ReconciliationResponse(
         spec_id=report.spec_id,

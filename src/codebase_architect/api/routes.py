@@ -29,9 +29,11 @@ from codebase_architect.api.schemas import (
     ScanRef,
     ScanRequest,
     ScanStatusResponse,
+    SequenceResponse,
     SpecSummaryResponse,
     api_flow_to_response,
     reconciliation_to_response,
+    sequences_to_response,
     spec_payload_to_domain,
     spec_summary,
     spec_to_response,
@@ -50,6 +52,7 @@ from codebase_architect.application.services.spec_service import SpecService
 from codebase_architect.domain.services.api_match import ScanSurface, match_api_flows
 from codebase_architect.domain.services.http_flows import collect_http
 from codebase_architect.domain.services.reconcile import reconcile_spec
+from codebase_architect.domain.services.sequence_diagram import spec_sequences
 from codebase_architect.infrastructure.export.zip_archive import zip_directory
 from codebase_architect.shared.errors import NotFoundError
 
@@ -380,3 +383,28 @@ def api_flow(
             routes, calls = collect_http(job.result.code_model)
             surfaces.append(ScanSurface(sid, tuple(routes), tuple(calls)))
     return api_flow_to_response(spec_id, match_api_flows(surfaces))
+
+
+@router.get("/specs/{spec_id}/sequence", response_model=SequenceResponse)
+def sequence_diagrams(
+    spec_id: str,
+    specs: SpecService = Depends(get_spec_service),
+    scans: ScanService = Depends(get_service),
+) -> SequenceResponse:
+    """Per-functionality Mermaid sequence diagrams, grounded by the API flow."""
+    try:
+        spec = specs.get(spec_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    surfaces: list[ScanSurface] = []
+    for sid in spec.linked_scan_ids:
+        try:
+            job = scans.get(sid)
+        except NotFoundError:
+            continue
+        if job.status is ScanStatus.DONE and job.result is not None:
+            routes, calls = collect_http(job.result.code_model)
+            surfaces.append(ScanSurface(sid, tuple(routes), tuple(calls)))
+    graph = match_api_flows(surfaces)
+    confirmed = [edge.path for edge in graph.edges]
+    return sequences_to_response(spec_id, spec_sequences(spec, confirmed_paths=confirmed))
