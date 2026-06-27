@@ -31,18 +31,34 @@ The human-readable index of the box. Keep it current.
 | n8n | `n8n-n8n-1` | `100.83.238.95:5678` | `http://100.83.238.95:5678/` |
 | vikunja | `vikunja-1` | `100.83.238.95:32777` | `http://100.83.238.95:32777/` |
 | mibaldiutils | `mibaldiutils-web-1` | `100.83.238.95:8088` | `http://100.83.238.95:8088/` |
+| hermes (Hostinger) | `hermes-agent-*` | container `4860` (via forwarder) | `http://100.83.238.95:4860/` |
 | postgres (engram) | `*-postgres-1` | `100.83.238.95:5432` | internal/tailnet only |
 
-> **hermes** is the Hostinger-managed agent dashboard on port `4860`. It binds
-> `0.0.0.0:4860` *inside its own container* (docker IP `172.19.0.2:4860`) and is
-> reached through Hostinger's proxy at `srv1188691.hstgr.cloud`, not on the host
-> or tailnet. Leave it to Hostinger. To also expose it on the tailnet, publish
-> `4860` on the Tailscale IP from its compose (`100.83.238.95:4860:4860`).
+> hermes is the **Hostinger-managed** agent dashboard. It binds `0.0.0.0:4860`
+> *inside its own container* (docker IP `172.19.0.2:4860`) and is also reachable
+> via Hostinger's proxy at `srv1188691.hstgr.cloud`. We do **not** edit its
+> compose (Hostinger would overwrite it) — see "Exposing hermes" below.
 
 > Anything bound to `0.0.0.0` **on the host** (e.g. vikunja `0.0.0.0:32777`,
 > Traefik `0.0.0.0:80/443`) is public — repoint it to the Tailscale IP or remove
 > it. (A container's *internal* `0.0.0.0` bind, like hermes', is not host-public
 > unless a `ports:` entry publishes it.)
+
+## Exposing hermes on the tailnet (without touching Hostinger's container)
+
+hermes' container does not publish `4860` on the host, and we can't edit its
+compose. Instead run a tiny `socat` forwarder container that publishes `4860` on
+the Tailscale IP and connects to hermes by name over its docker network (so it
+keeps working across restarts):
+
+```bash
+sudo ./scripts/hermes-tailnet.sh        # -> http://100.83.238.95:4860/
+```
+
+It auto-detects the hermes container and its network; override with
+`HERMES_CONTAINER=<name>` if detection fails (`docker ps` to find it). The
+forwarder runs with `--restart unless-stopped`, so it survives reboots. Removing
+it: `docker rm -f hermes-tailnet`.
 
 ## Putting a service on the Tailscale IP
 

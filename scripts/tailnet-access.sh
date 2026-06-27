@@ -19,9 +19,8 @@ SERVICES=(
   "5678   n8n"
   "32777  vikunja"
   "8088   mibaldiutils"
+  "4860   hermes (via scripts/hermes-tailnet.sh forwarder)"
 )
-# Note: hermes (Hostinger agent dashboard, port 4860) is reached via Hostinger's
-# proxy at srv1188691.hstgr.cloud, not by tailnet IP:port — so it is not listed.
 
 IP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
 if [[ -z "${IP}" ]]; then
