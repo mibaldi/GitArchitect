@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from codebase_architect.application.pipeline.scan_pipeline import ScanResult
 from codebase_architect.application.services.scan_service import ScanJob, ScanStatus
+from codebase_architect.shared.redaction import redact_url_credentials
 
 # -- Requests ---------------------------------------------------------------
 
@@ -153,7 +154,7 @@ def to_status_response(job: ScanJob) -> ScanStatusResponse:
         id=job.id,
         status=job.status,
         title=job.options.title,
-        location=job.options.location,
+        location=redact_url_credentials(job.options.location),
         error=job.error,
         duration_seconds=job.duration_seconds,
         summary=summary,

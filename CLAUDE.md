@@ -89,10 +89,12 @@ Always run `make check` before committing. Keep it green.
 ## Current state & what's not done
 
 Implemented F0–F8 (see `docs/SDD.md` §13). Verified end-to-end for the static
-path (CLI, API, Docker). **Not implemented yet**: Postgres persistence + Arq
-workers (scan state is in memory), hosting plugins (GitHub/GitLab/Bitbucket),
-broader language coverage. **Not exercised live**: real LLM calls (no API keys
-in CI) — implemented per the official SDKs and covered by fakes.
+path (CLI, API, Docker). Scans are **persisted to disk** (file-based
+`ScanStore`) so history survives restarts; **not implemented yet**: Postgres +
+Arq workers (the store is file-based, behind a port), hosting plugins
+(GitHub/GitLab/Bitbucket), broader language coverage. **Not exercised live**:
+real LLM calls (no API keys in CI) — implemented per the official SDKs and
+covered by fakes.
 
 ## Run it
 

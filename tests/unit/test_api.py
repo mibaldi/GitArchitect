@@ -149,6 +149,26 @@ def test_upload_rejects_unsupported_type(client: TestClient) -> None:
     assert response.status_code == 400
 
 
+def test_scans_persist_across_restart(tmp_path: Path, project: Path) -> None:
+    settings = Settings(
+        workspaces_dir=str(tmp_path / "ws"),
+        data_dir=str(tmp_path / "data"),
+    )
+    first = TestClient(create_app(settings))
+    scan_id = _submit(first, project)
+    assert first.get(f"/scans/{scan_id}").json()["status"] == "done"
+
+    # A fresh app over the same data dir restores history and serves the docs.
+    second = TestClient(create_app(settings))
+    listed = {s["id"] for s in second.get("/scans").json()}
+    assert scan_id in listed
+    status = second.get(f"/scans/{scan_id}").json()
+    assert status["status"] == "done"
+    assert status["summary"]["entrypoints"] >= 1
+    page = second.get(f"/scans/{scan_id}/pages/architecture").json()
+    assert page["markdown"].startswith("# ")
+
+
 def test_credentials_accepted_but_never_echoed(client: TestClient, project: Path) -> None:
     response = client.post(
         "/scans",
