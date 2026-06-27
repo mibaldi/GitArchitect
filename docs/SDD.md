@@ -1,8 +1,11 @@
 # Codebase Architect — Software Design Document (SDD)
 
-> Estado: **PROPUESTA DE DISEÑO (v2) — PENDIENTE DE APROBACIÓN**
-> No contiene implementación. Una vez aprobado, se implementa por fases con commits pequeños.
-> Reemplaza a la v1 (que modelaba un agente que *modificaba* código). Fecha: 2026-06-26.
+> Estado: **APROBADO — IMPLEMENTADO (F0–F8)**
+> El diseño v2 (generador de documentación) está implementado de extremo a extremo:
+> CLI + API REST, análisis estático (Java/Kotlin/Angular), narrativa IA opcional
+> multi-proveedor, render Markdown/Mermaid (+HTML por plugin), secret scanning y caché.
+> Reemplaza a la v1 (que modelaba un agente que *modificaba* código). Fecha: 2026-06-27.
+> Guía de uso: `docs/USAGE.md`. Guía para contribuir/IA: `CLAUDE.md`.
 
 ---
 
@@ -498,19 +501,22 @@ codebase-architect/
 
 ## 13. Roadmap por fases
 
-| Fase | Objetivo | Entregable verificable |
-|------|----------|------------------------|
-| **F0 — Cimientos** | Repo, pyproject, hexágono, import-linter, config/logging, CI | `make test` verde; arch tests pasan |
-| **F1 — Importación** | `SourceProvider` + 5 adaptadores + Workspace read-only + resolver | Importar git/folder/zip/tar.gz a workspace aislado |
-| **F2 — Detección & Parsing** | Language/Manifest detectors + tree-sitter parsers + símbolos | CodeModel parcial (lenguajes, stacks, símbolos) |
-| **F3 — Modelo & Arquitectura** | Grafo de módulos/deps, entrypoints, `ArchitectureInferencer` | Architecture inferida con evidencia |
-| **F4 — Render estático** | DocumentationBuilder + MermaidGenerator + MarkdownRenderer + export | `architect scan` produce docs en **modo estático** |
-| **F5 — IA (narrativa)** | `AIProvider` (Claude) + Features + Flows anclados a evidencia | Docs con funcionalidades y flujos redactados |
-| **F6 — API & Workers** | API REST async + Arq + estados/eventos + descarga | Escaneo extremo a extremo vía API |
-| **F7 — Multi-IA & Plugins** | OpenAI/Gemini/OpenRouter/Local + entry points + conformance | Cambiar proveedor por config; renderer plugin de ejemplo |
-| **F8 — Hardening** | Secret scanning/redacción, presupuestos, caché, métricas, docs | Límites de coste, scan de secretos, observabilidad |
+| Fase | Estado | Objetivo | Entregable verificable |
+|------|--------|----------|------------------------|
+| **F0 — Cimientos** | ✅ | Repo, pyproject, hexágono, import-linter, config/logging, CI | `make check` verde; arch tests pasan |
+| **F1 — Importación** | ✅ | `SourceProvider` + 5 adaptadores + Workspace read-only + resolver | Importar git/folder/zip/tar.gz a workspace aislado |
+| **F2 — Detección & Parsing** | ✅ | Language/Manifest detectors + tree-sitter parsers + símbolos | CodeModel (lenguajes, stacks, símbolos) |
+| **F3 — Modelo & Arquitectura** | ✅ | Grafo de módulos/deps, entrypoints, `infer_architecture` | Architecture inferida con evidencia |
+| **F4 — Render estático** | ✅ | DocumentationBuilder + MermaidGenerator + MarkdownRenderer + export | `architect scan` produce docs (**absorbida en F3**) |
+| **F5 — IA (narrativa)** | ✅ | `AIProvider` (Claude) + Features + Flows anclados a evidencia | Docs con funcionalidades y flujos redactados |
+| **F6 — API** | ✅ | API REST async (202+polling) + estados + descarga | Escaneo extremo a extremo vía API (store en memoria) |
+| **F7 — Multi-IA & Plugins** | ✅ | OpenAI/Gemini/OpenRouter/Local + entry points + conformance | Cambiar proveedor por config; renderer plugin HTML |
+| **F8 — Hardening** | ✅ | Secret scanning/redacción, caché de narrativa, métricas, max_tokens | Scan de secretos redactado, caché, duración |
 
-> El one-shot **`architect scan`** ya es usable al final de **F4** (modo estático) y completo en **F5** (con IA).
+> **Implementado F0–F8.** El one-shot **`architect scan`** es usable en modo estático y completo con IA;
+> también expuesto por API REST y empaquetado en Docker (`docker compose up`).
+> **Pendiente (no implementado):** persistencia en Postgres + workers Arq (hoy el estado de escaneos es
+> en memoria); plugins de hosting (GitHub/GitLab/Bitbucket); más lenguajes de parsing.
 
 ---
 

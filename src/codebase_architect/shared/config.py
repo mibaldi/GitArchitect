@@ -23,20 +23,18 @@ class AIProviderSettings(BaseModel):
 
 class AISettings(BaseModel):
     default_provider: str = "claude"
-    budget_per_task_usd: float = 5.0
+    budget_per_scan_usd: float = 2.0
+    max_tokens: int = 4096
+    cache_enabled: bool = True
 
 
 class GitSettings(BaseModel):
     enabled: bool = True
 
 
-class SandboxSettings(BaseModel):
-    enabled: bool = True
-    driver: str = "docker"
-
-
-class ReviewSettings(BaseModel):
-    require_human_approval: bool = True
+class ScanSettings(BaseModel):
+    static_only: bool = False
+    default_out: str = "./docs-output"
 
 
 class Settings(BaseSettings):
@@ -64,10 +62,9 @@ class Settings(BaseSettings):
     database_url: str | None = None
     redis_url: str | None = None
 
+    scan: ScanSettings = Field(default_factory=ScanSettings)
     ai: AISettings = Field(default_factory=AISettings)
     git: GitSettings = Field(default_factory=GitSettings)
-    sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
-    review: ReviewSettings = Field(default_factory=ReviewSettings)
 
 
 @lru_cache
