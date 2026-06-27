@@ -9,10 +9,20 @@ from codebase_architect.shared.errors import ValidationError
 
 
 def copy_tree(src: Path, dest: Path, ignore: frozenset[str] = frozenset()) -> None:
-    """Copy ``src`` into ``dest``, skipping top-level-ignored directory names."""
+    """Copy ``src`` into ``dest``, skipping ignored directory names.
 
-    def _ignore(_dir: str, names: list[str]) -> set[str]:
-        return {n for n in names if n in ignore}
+    When ``dest`` lives *inside* ``src`` (e.g. scanning the current directory
+    while the workspace is created under ``./workspaces``), it is excluded so the
+    copy does not recurse into its own growing destination.
+    """
+    dest_resolved = dest.resolve()
+
+    def _ignore(directory: str, names: list[str]) -> set[str]:
+        skipped = {n for n in names if n in ignore}
+        for name in names:
+            if (Path(directory) / name).resolve() == dest_resolved:
+                skipped.add(name)
+        return skipped
 
     shutil.copytree(src, dest, ignore=_ignore, dirs_exist_ok=True, symlinks=True)
 

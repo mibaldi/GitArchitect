@@ -68,6 +68,35 @@ def test_npm_angular(tmp_path: Path) -> None:
     assert any(d.name == "typescript" and d.scope == "dev" for d in deps)
 
 
+def test_pyproject_pep621_fastapi(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """[project]
+name = "demo"
+dependencies = ["fastapi>=0.110", "pydantic>=2.6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2"]
+""",
+        encoding="utf-8",
+    )
+    stacks, deps = CompositeManifestDetector().detect(_workspace(tmp_path))
+    assert {"Python", "pip", "FastAPI"} <= _names(stacks)
+    names = {d.name for d in deps}
+    assert {"fastapi", "pydantic"} <= names
+    assert any(d.name == "pytest" and d.scope == "dev" for d in deps)
+
+
+def test_requirements_txt(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "# comment\nflask==3.0.0\n-r other.txt\nrequests>=2.31\n",
+        encoding="utf-8",
+    )
+    stacks, deps = CompositeManifestDetector().detect(_workspace(tmp_path))
+    assert {"Python", "pip", "Flask"} <= _names(stacks)
+    names = {d.name for d in deps}
+    assert {"flask", "requests"} <= names
+
+
 def test_malformed_manifest_is_skipped(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text("{ not valid json", encoding="utf-8")
     stacks, deps = CompositeManifestDetector().detect(_workspace(tmp_path))

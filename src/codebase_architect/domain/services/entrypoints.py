@@ -24,7 +24,20 @@ def detect_entrypoints(model: CodeModel) -> list[Entrypoint]:
             entrypoints.extend(_jvm_entrypoints(parsed))
         elif parsed.language in (Language.TYPESCRIPT, Language.TSX):
             entrypoints.extend(_angular_entrypoints(parsed))
+        elif parsed.language is Language.PYTHON:
+            entrypoints.extend(_python_entrypoints(parsed))
     return entrypoints
+
+
+def _python_entrypoints(parsed: ParsedFile) -> list[Entrypoint]:
+    module = _module_of(parsed.path)
+    has_main = any(
+        s.kind is SymbolKind.FUNCTION and s.name == "main" for s in parsed.symbols
+    )
+    if has_main or posixpath.basename(parsed.path) == "__main__.py":
+        name = posixpath.basename(parsed.path)
+        return [Entrypoint(name, EntrypointKind.CLI_MAIN, parsed.path, module, "main()/__main__")]
+    return []
 
 
 def _module_of(path: str) -> str:

@@ -79,6 +79,28 @@ export function helper(): void {}
     assert {"@angular/core", "./user.service"} == {i.target for i in parsed.imports}
 
 
+def test_python(parser: TreeSitterParser) -> None:
+    src = b"""import os
+from collections import OrderedDict
+from .helpers import build
+from mypkg.services import Worker as W
+
+
+class Greeter:
+    def hello(self, name: str) -> str:
+        return name
+
+
+def main() -> None:
+    pass
+"""
+    parsed = parser.parse("greeter.py", Language.PYTHON, src)
+    assert "Greeter" in _names(parsed, SymbolKind.CLASS)
+    assert {"main"} <= _names(parsed, SymbolKind.FUNCTION)
+    targets = {i.target for i in parsed.imports}
+    assert {"os", "collections", ".helpers", "mypkg.services"} <= targets
+
+
 def test_unsupported_language_counts_loc_only(parser: TreeSitterParser) -> None:
     assert parser.supports(Language.HTML) is False
     parsed = parser.parse("a.html", Language.HTML, b"<div>\n<span>\n</div>\n")

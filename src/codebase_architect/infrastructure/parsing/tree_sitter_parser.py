@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import tree_sitter_html
 import tree_sitter_java
 import tree_sitter_kotlin
+import tree_sitter_python
 import tree_sitter_typescript
 from tree_sitter import Language as TSLanguage
 from tree_sitter import Node, Parser
@@ -92,6 +93,15 @@ def _build_specs() -> dict[Language, _LangSpec]:
         import_types=frozenset({"import_statement"}),
         import_style="source",
     )
+    python = _LangSpec(
+        ts_language=TSLanguage(tree_sitter_python.language()),
+        symbols={
+            "class_definition": SymbolKind.CLASS,
+            "function_definition": SymbolKind.FUNCTION,
+        },
+        import_types=frozenset({"import_statement", "import_from_statement"}),
+        import_style="python",
+    )
     return {
         Language.JAVA: java,
         Language.KOTLIN: kotlin,
@@ -99,6 +109,7 @@ def _build_specs() -> dict[Language, _LangSpec]:
         Language.TSX: tsx,
         # JavaScript is parsed with the TypeScript (superset) grammar.
         Language.JAVASCRIPT: typescript,
+        Language.PYTHON: python,
     }
 
 
@@ -173,6 +184,8 @@ def _import_target(node: Node, style: str) -> str | None:
         if source is not None and source.text is not None:
             return source.text.decode("utf-8", "replace").strip("'\"")
         return None
+    if style == "python":
+        return _python_import_target(node)
     # text style (Java/Kotlin): strip the keyword, modifiers and terminator.
     if node.text is None:
         return None
@@ -182,6 +195,22 @@ def _import_target(node: Node, style: str) -> str | None:
     raw = raw.rstrip(";").strip()
     raw = raw.split(" as ", 1)[0].strip()
     return raw or None
+
+
+def _python_import_target(node: Node) -> str | None:
+    # `from a.b import c` -> "a.b" ; `from . import c` -> "."
+    module = node.child_by_field_name("module_name")
+    if module is not None and module.text is not None:
+        return module.text.decode("utf-8", "replace").strip()
+    # `import a.b[.c]` (possibly aliased) -> the first dotted name.
+    for child in node.children:
+        target = child
+        if child.type == "aliased_import":
+            named = child.child_by_field_name("name")
+            target = named if named is not None else child
+        if target.type in ("dotted_name", "identifier") and target.text is not None:
+            return target.text.decode("utf-8", "replace").strip()
+    return None
 
 
 def _package_name(node: Node) -> str | None:

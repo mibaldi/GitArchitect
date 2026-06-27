@@ -72,6 +72,37 @@ def test_typescript_relative_imports_resolve_by_directory() -> None:
     assert {(e.source, e.target) for e in graph.edges} == {("src/app", "src/core")}
 
 
+def test_python_dotted_imports_resolve_to_directory_modules() -> None:
+    model = _model(
+        ParsedFile(
+            path="src/demo/api/routes.py",
+            language=Language.PYTHON,
+            loc=5,
+            imports=(ImportRef("demo.services.scan"), ImportRef("os")),
+        ),
+        ParsedFile(path="src/demo/services/scan.py", language=Language.PYTHON, loc=4),
+    )
+    graph = build_module_graph(model)
+    assert graph.module_ids() == {"src/demo/api", "src/demo/services"}
+    assert {(e.source, e.target) for e in graph.edges} == {
+        ("src/demo/api", "src/demo/services")
+    }
+
+
+def test_python_relative_imports_resolve_by_directory() -> None:
+    model = _model(
+        ParsedFile(
+            path="pkg/api/routes.py",
+            language=Language.PYTHON,
+            loc=5,
+            imports=(ImportRef("..services"),),
+        ),
+        ParsedFile(path="pkg/services/scan.py", language=Language.PYTHON, loc=4),
+    )
+    graph = build_module_graph(model)
+    assert {(e.source, e.target) for e in graph.edges} == {("pkg/api", "pkg/services")}
+
+
 def test_wildcard_import_resolves_to_package() -> None:
     model = _model(
         ParsedFile(
