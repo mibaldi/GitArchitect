@@ -112,6 +112,12 @@ def test_unknown_scan_is_404(client: TestClient) -> None:
     assert client.get("/scans/scan_does_not_exist").status_code == 404
 
 
+def test_runner_check_unreachable(client: TestClient) -> None:
+    resp = client.post("/ai/runner-check", json={"base_url": "http://127.0.0.1:1"})
+    assert resp.status_code == 200
+    assert resp.json() == {"reachable": False, "detail": "not reachable"}
+
+
 def _zip_bytes() -> io.BytesIO:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as archive:

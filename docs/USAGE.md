@@ -149,6 +149,12 @@ GitArchitect ──HTTP──▶ CLI runner (Mac) ──▶ claude/codex CLI
 If the runner is unreachable or the agent fails, the scan degrades to static
 docs with a clear error in the logs (credentials/URLs are redacted).
 
+**From the dashboard** you don't need env vars: open **Settings**, pick provider
+`cli_runner`, and the fields become *Runner URL*, *Shared secret* and *Agent*
+(claude/codex). Use **Test runner connection** to verify it, then uncheck
+"Static only" when scanning. Settings stay in your browser; the runner URL/secret
+travel with each scan request (in memory, never persisted or logged).
+
 ## Web dashboard + REST API
 
 ```bash
