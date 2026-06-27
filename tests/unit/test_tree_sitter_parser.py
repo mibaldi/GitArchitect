@@ -101,6 +101,24 @@ def main() -> None:
     assert {"os", "collections", ".helpers", "mypkg.services"} <= targets
 
 
+def test_calls_extracted_skipping_member_calls(parser: TreeSitterParser) -> None:
+    src = b"""package com.demo;
+class X {
+    void run() {
+        new Greeter();
+        helper();
+        this.ignored();
+        other.alsoIgnored();
+    }
+}
+"""
+    parsed = parser.parse("X.java", Language.JAVA, src)
+    assert "Greeter" in parsed.calls  # constructor
+    assert "helper" in parsed.calls  # unqualified call
+    assert "ignored" not in parsed.calls  # member call skipped
+    assert "alsoIgnored" not in parsed.calls
+
+
 def test_unsupported_language_counts_loc_only(parser: TreeSitterParser) -> None:
     assert parser.supports(Language.HTML) is False
     parsed = parser.parse("a.html", Language.HTML, b"<div>\n<span>\n</div>\n")

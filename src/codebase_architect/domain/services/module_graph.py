@@ -49,11 +49,16 @@ def build_module_graph(model: CodeModel) -> ModuleGraph:
     return ModuleGraph(modules=ordered, edges=edges)
 
 
-def _module_key(parsed: ParsedFile) -> str:
+def module_id_of(parsed: ParsedFile) -> str:
+    """The module a file belongs to: its package, else its directory."""
     if parsed.package:
         return parsed.package
     parent = posixpath.dirname(parsed.path)
     return parent or _ROOT
+
+
+def _module_key(parsed: ParsedFile) -> str:
+    return module_id_of(parsed)
 
 
 def _module_name(key: str) -> str:
