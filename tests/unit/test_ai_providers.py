@@ -54,3 +54,26 @@ def test_openai_availability_follows_env(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_local_provider_needs_no_key() -> None:
     # A local OpenAI-compatible server is assumed reachable; no API key required.
     assert build_ai_provider("local").available() is True
+
+
+def test_explicit_api_key_makes_claude_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert build_ai_provider("claude").available() is False
+    # A key entered in the dashboard (passed per scan) makes it available.
+    assert build_ai_provider("claude", api_key="sk-test").available() is True
+
+
+def test_base_url_makes_claude_available_for_local_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    provider = build_ai_provider("claude", base_url="http://100.1.2.3:8080")
+    assert provider.available() is True  # local Anthropic-compatible endpoint
+
+
+def test_overrides_change_cache_fingerprint() -> None:
+    a = build_ai_provider("local", base_url="http://a/v1", model="llama3")
+    b = build_ai_provider("local", base_url="http://b/v1", model="llama3")
+    c = build_ai_provider("local", base_url="http://a/v1", model="qwen")
+    assert a.fingerprint() != b.fingerprint()  # different endpoint
+    assert a.fingerprint() != c.fingerprint()  # different model

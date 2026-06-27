@@ -93,6 +93,13 @@ def scan(
     ai_provider: str | None = typer.Option(
         None, "--ai-provider", help="AI provider for the narrative (default: from config)"
     ),
+    ai_api_key: str | None = typer.Option(
+        None, "--ai-api-key", help="API key for the AI provider (overrides env)"
+    ),
+    ai_base_url: str | None = typer.Option(
+        None, "--ai-base-url", help="Custom/local AI endpoint (e.g. a runner on your tailnet)"
+    ),
+    ai_model: str | None = typer.Option(None, "--ai-model", help="Override the AI model"),
     renderer: str = typer.Option(
         "markdown", "--renderer", help="Documentation renderer (built-in: markdown; or a plugin)"
     ),
@@ -109,7 +116,12 @@ def scan(
     """
     settings = get_settings()
     use_static_only = static_only or settings.scan.static_only
-    provider = build_ai_provider(ai_provider or settings.ai.default_provider)
+    provider = build_ai_provider(
+        ai_provider or settings.ai.default_provider,
+        api_key=ai_api_key,
+        base_url=ai_base_url,
+        model=ai_model,
+    )
     if not use_static_only and not provider.available():
         typer.secho(
             f"AI provider '{provider.name}' is not configured; running static-only.",

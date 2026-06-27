@@ -20,7 +20,6 @@ from codebase_architect.domain.model.module import ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.ports.ai_provider import AIProvider
 from codebase_architect.domain.ports.narrative_cache import NarrativeCache
-from codebase_architect.shared.errors import CapabilityUnavailableError
 from codebase_architect.shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -61,7 +60,7 @@ class GenerateNarrativeUseCase:
         allowed = graph.module_ids() | {e.name for e in entrypoints}
         prompt = _build_prompt(model, graph, architecture, entrypoints)
 
-        cache_key = _cache_key(self._provider.name, prompt)
+        cache_key = _cache_key(self._provider.fingerprint(), prompt)
         if self._cache is not None:
             cached = self._cache.get(cache_key)
             if cached is not None:
@@ -72,10 +71,10 @@ class GenerateNarrativeUseCase:
             completion = self._provider.complete(
                 system=_SYSTEM, prompt=prompt, max_tokens=self._max_tokens
             )
-        except CapabilityUnavailableError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - never let AI failure break a scan
-            logger.warning("ai_narrative_failed", error=str(exc))
+        except Exception as exc:  # noqa: BLE001 - any AI failure degrades to static docs
+            # Missing SDK, unreachable endpoint, bad key, etc. — the static
+            # documentation is still produced; we just skip the narrative.
+            logger.warning("ai_narrative_failed", provider=self._provider.name, error=str(exc))
             return NarrativeReport()
 
         data = _extract_json(completion.text)
@@ -96,8 +95,8 @@ class GenerateNarrativeUseCase:
         return report
 
 
-def _cache_key(provider_name: str, prompt: str) -> str:
-    digest = hashlib.sha256(f"{provider_name}\n{prompt}".encode())
+def _cache_key(fingerprint: str, prompt: str) -> str:
+    digest = hashlib.sha256(f"{fingerprint}\n{prompt}".encode())
     return digest.hexdigest()
 
 

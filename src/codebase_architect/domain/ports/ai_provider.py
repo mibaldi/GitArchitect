@@ -20,6 +20,14 @@ class AIProvider(ABC):
     #: Stable provider identifier (e.g. "claude", "openai", "null").
     name: ClassVar[str]
 
+    def fingerprint(self) -> str:
+        """A cache identity for this provider's configuration (name + model + endpoint).
+
+        Used so the narrative cache distinguishes runs made with different
+        models or endpoints. Overridden by providers that carry a model/base URL.
+        """
+        return self.name
+
     @abstractmethod
     def available(self) -> bool:
         """Whether this provider is configured and usable (e.g. API key present)."""
