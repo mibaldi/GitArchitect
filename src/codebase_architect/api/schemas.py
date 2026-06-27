@@ -39,6 +39,7 @@ class ScanRef(BaseModel):
     status: ScanStatus
     title: str | None = None
     tags: list[str] = []
+    created_at: str = ""
 
 
 class ScanMetaRequest(BaseModel):
