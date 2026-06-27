@@ -26,7 +26,8 @@ class ScanRecord:
     status: str
     title: str | None
     location: str  # already redacted of any credentials
-    created_at: str
+    tags: tuple[str, ...] = ()
+    created_at: str = ""
     finished_at: str | None = None
     duration_seconds: float | None = None
     error: str | None = None

@@ -204,6 +204,12 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .cov-badge.partial { background: rgba(217,146,0,.16); color: #d99200; }
 .cov-badge.missing { background: rgba(210,51,51,.16); color: #d23; }
 .cov-ev { font-size: .74rem; color: var(--muted); margin-top: 2px; }
+.tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px; font-size: .66rem; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
+.group-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.group-pick { display: flex; align-items: center; gap: 8px; flex: 1; margin: 0; cursor: pointer; }
+.group-pick input { width: auto; }
+.group-pick span { font-size: .85rem; color: var(--text); }
+.group-tags { width: 150px; font-size: .76rem; padding: 4px 8px; }
 
 .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -248,6 +254,8 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
       </div>
       <label>Title (optional)</label>
       <input id="title" placeholder="My Project">
+      <label>Tags (optional, comma-separated)</label>
+      <input id="tags" placeholder="frontend, backend, orders-svc">
       <div class="toggle">
         <input type="checkbox" id="staticOnly" checked>
         <label for="staticOnly">Static only (no AI narrative)</label>
@@ -562,13 +570,22 @@ async function openReconcile(id, product) {
     const group = $("recGroup");
     group.innerHTML = done.length ? "" : '<div class="cov-ev">No finished scans to link.</div>';
     done.forEach(s => {
-      const row = document.createElement("label");
-      row.className = "toggle"; row.style.margin = "4px 0";
-      row.innerHTML = `<input type="checkbox" ${linked.has(s.id) ? "checked" : ""}><span>scan ${s.id.slice(5, 13)}</span>`;
-      row.querySelector("input").onchange = async ev => {
+      const row = document.createElement("div");
+      row.className = "group-row";
+      const name = s.title ? esc(s.title) : `scan ${s.id.slice(5, 13)}`;
+      row.innerHTML =
+        `<label class="group-pick"><input type="checkbox" ${linked.has(s.id) ? "checked" : ""}><span>${name}</span></label>` +
+        `<input class="group-tags" value="${esc((s.tags || []).join(", "))}" placeholder="tags…" title="Comma-separated tags">`;
+      row.querySelector("input[type=checkbox]").onchange = async ev => {
         const method = ev.target.checked ? "POST" : "DELETE";
         try { await api(`/specs/${recSpecId}/scans/${s.id}`, { method }); }
         catch (err) { $("recFlowErr").textContent = err.message; ev.target.checked = !ev.target.checked; }
+      };
+      const tagInput = row.querySelector(".group-tags");
+      tagInput.onchange = async () => {
+        const tags = tagInput.value.split(",").map(t => t.trim()).filter(Boolean);
+        try { await api(`/scans/${s.id}/meta`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ tags }) }); refreshScans(); }
+        catch (err) { $("recFlowErr").textContent = err.message; }
       };
       group.appendChild(row);
     });
@@ -679,7 +696,9 @@ async function refreshScans() {
   scans.reverse().forEach(s => {
     const li = document.createElement("li");
     if (s.id === current) li.className = "active";
-    li.innerHTML = `<span class="name">scan <span>${s.id.slice(5, 13)}</span></span><span class="badge ${s.status}">${s.status}</span>`;
+    const name = s.title ? esc(s.title) : `scan <span>${s.id.slice(5, 13)}</span>`;
+    const tags = (s.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join("");
+    li.innerHTML = `<span class="name">${name}${tags}</span><span class="badge ${s.status}">${s.status}</span>`;
     li.onclick = () => selectScan(s.id);
     ul.appendChild(li);
   });
@@ -690,6 +709,7 @@ $("scanForm").onsubmit = async e => {
   $("formErr").textContent = "";
   const staticOnly = $("staticOnly").checked;
   const title = $("title").value.trim();
+  const tags = $("tags").value.split(",").map(t => t.trim()).filter(Boolean);
   const location = $("location").value.trim();
   const file = $("upload").files[0];
   if (!location && !file) {
@@ -703,6 +723,7 @@ $("scanForm").onsubmit = async e => {
       const fd = new FormData();
       fd.append("file", file);
       if (title) fd.append("title", title);
+      if (tags.length) fd.append("tags", tags.join(","));
       fd.append("static_only", staticOnly);
       if (!staticOnly) {
         if (LS("provider")) fd.append("ai_provider", LS("provider"));
@@ -715,6 +736,7 @@ $("scanForm").onsubmit = async e => {
       const body = {
         location,
         title: title || null,
+        tags,
         static_only: staticOnly,
         ai_provider: staticOnly ? null : (LS("provider") || null),
         ai_api_key: staticOnly ? null : (LS("apiKey") || null),
@@ -723,7 +745,7 @@ $("scanForm").onsubmit = async e => {
       };
       ({ id } = await api("/scans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
     }
-    $("upload").value = "";
+    $("upload").value = ""; $("tags").value = "";
     await refreshScans(); selectScan(id);
   } catch (err) { $("formErr").textContent = err.message; }
   finally { btn.disabled = false; btn.textContent = "Run scan"; }
