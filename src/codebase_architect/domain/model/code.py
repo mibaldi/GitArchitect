@@ -55,6 +55,23 @@ class ImportRef:
 
 
 @dataclass(frozen=True)
+class HttpEndpointDecl:
+    """An HTTP endpoint a file exposes (e.g. Spring @GetMapping, FastAPI route)."""
+
+    method: str  # GET/POST/... or "ANY"
+    path: str
+    handler: str = ""  # the function/method name serving it
+
+
+@dataclass(frozen=True)
+class HttpCallDecl:
+    """An outbound HTTP call a file makes (e.g. Angular HttpClient, fetch)."""
+
+    method: str  # GET/POST/... or "ANY"
+    path: str
+
+
+@dataclass(frozen=True)
 class ParsedFile:
     """The result of parsing a single source file."""
 
@@ -68,3 +85,7 @@ class ParsedFile:
     #: Names referenced as calls/instantiations (e.g. ``new Foo()``, ``foo()``),
     #: used to build a call graph on top of the import graph.
     calls: tuple[str, ...] = ()
+    #: HTTP endpoints this file exposes (server side).
+    routes: tuple[HttpEndpointDecl, ...] = ()
+    #: Outbound HTTP calls this file makes (client side).
+    http_calls: tuple[HttpCallDecl, ...] = ()

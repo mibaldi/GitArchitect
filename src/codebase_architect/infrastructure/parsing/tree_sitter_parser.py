@@ -19,6 +19,8 @@ from tree_sitter import Language as TSLanguage
 from tree_sitter import Node, Parser
 
 from codebase_architect.domain.model.code import (
+    HttpCallDecl,
+    HttpEndpointDecl,
     ImportRef,
     Language,
     ParsedFile,
@@ -28,6 +30,17 @@ from codebase_architect.domain.model.code import (
 from codebase_architect.domain.ports.analysis import CodeParser
 
 _NAME_NODE_TYPES = {"identifier", "type_identifier", "simple_identifier"}
+
+# Spring mapping annotations and FastAPI/HttpClient verbs -> HTTP method.
+_SPRING_MAPPING = {
+    "GetMapping": "GET",
+    "PostMapping": "POST",
+    "PutMapping": "PUT",
+    "DeleteMapping": "DELETE",
+    "PatchMapping": "PATCH",
+    "RequestMapping": "ANY",
+}
+_HTTP_VERBS = frozenset({"get", "post", "put", "delete", "patch"})
 
 
 @dataclass(frozen=True)
@@ -171,6 +184,7 @@ class TreeSitterParser(CodeParser):
                     calls.add(callee)
             stack.extend(node.children)
 
+        routes, http_calls = _extract_http(tree.root_node, language)
         return ParsedFile(
             path=relative_path,
             language=language,
@@ -179,6 +193,8 @@ class TreeSitterParser(CodeParser):
             imports=tuple(imports),
             package=package,
             calls=tuple(sorted(calls)),
+            routes=tuple(routes),
+            http_calls=tuple(http_calls),
         )
 
 
@@ -275,3 +291,171 @@ def _package_name(node: Node) -> str | None:
     raw = node.text.decode("utf-8", "replace").strip()
     raw = raw.removeprefix("package").strip()
     return raw.rstrip(";").strip() or None
+
+
+# -- HTTP route / call extraction (phase C) ---------------------------------
+
+
+def _extract_http(
+    root: Node, language: Language
+) -> tuple[list[HttpEndpointDecl], list[HttpCallDecl]]:
+    routes: list[HttpEndpointDecl] = []
+    calls: list[HttpCallDecl] = []
+    if language is Language.JAVA:
+        _walk_java_http(root, "", routes)
+    elif language is Language.PYTHON:
+        _walk_python_routes(root, routes)
+    if language in (Language.TYPESCRIPT, Language.TSX, Language.JAVASCRIPT):
+        _walk_ts_http_calls(root, calls)
+    return routes, calls
+
+
+def _text_of(node: Node | None) -> str:
+    if node is None or node.text is None:
+        return ""
+    return node.text.decode("utf-8", "replace")
+
+
+def _string_value(node: Node | None) -> str | None:
+    """Literal value of a string/template node, or None if dynamic/absent."""
+    if node is None:
+        return None
+    if node.type == "template_string" and any(
+        c.type in ("template_substitution", "interpolation") for c in node.children
+    ):
+        return None  # has ${...} — not a static path
+    raw = _text_of(node).strip()
+    if len(raw) >= 2 and raw[0] in "\"'`" and raw[-1] in "\"'`":
+        return raw[1:-1]
+    return None
+
+
+def _join_path(base: str, path: str) -> str:
+    combined = base.rstrip("/") + "/" + path.lstrip("/") if base and path else base or path
+    if combined and not combined.startswith(("/", "http")):
+        combined = "/" + combined
+    return combined or "/"
+
+
+def _annotations(node: Node) -> list[Node]:
+    found: list[Node] = []
+    for child in node.children:
+        if child.type in ("annotation", "marker_annotation"):
+            found.append(child)
+        elif child.type == "modifiers":
+            found.extend(
+                c for c in child.children if c.type in ("annotation", "marker_annotation")
+            )
+    return found
+
+
+def _annotation_path(annotation: Node) -> str:
+    args = annotation.child_by_field_name("arguments")
+    if args is None:
+        return ""
+    for child in args.children:
+        if child.type == "element_value_pair":
+            key = _text_of(child.child_by_field_name("key"))
+            if key in ("value", "path"):
+                value = _string_value(child.child_by_field_name("value"))
+                if value is not None:
+                    return value
+        elif child.type == "string_literal":
+            value = _string_value(child)
+            if value is not None:
+                return value
+    return ""
+
+
+def _walk_java_http(node: Node, base: str, routes: list[HttpEndpointDecl]) -> None:
+    if node.type == "class_declaration":
+        class_base = base
+        for annotation in _annotations(node):
+            name = _text_of(annotation.child_by_field_name("name")).rsplit(".", 1)[-1]
+            if name == "RequestMapping":
+                class_base = _join_path(base, _annotation_path(annotation))
+        for child in node.children:
+            # The class body carries the base path down to its method mappings.
+            _walk_java_http(child, class_base if child.type == "class_body" else base, routes)
+        return
+    if node.type in ("method_declaration", "constructor_declaration"):
+        handler = _text_of(node.child_by_field_name("name"))
+        for annotation in _annotations(node):
+            name = _text_of(annotation.child_by_field_name("name")).rsplit(".", 1)[-1]
+            method = _SPRING_MAPPING.get(name)
+            if method:
+                path = _join_path(base, _annotation_path(annotation))
+                routes.append(HttpEndpointDecl(method, path, handler))
+        return
+    for child in node.children:
+        _walk_java_http(child, base, routes)
+
+
+def _walk_python_routes(node: Node, routes: list[HttpEndpointDecl]) -> None:
+    if node.type == "decorated_definition":
+        func = node.child_by_field_name("definition")
+        handler = _text_of(func.child_by_field_name("name")) if func is not None else ""
+        for child in node.children:
+            if child.type == "decorator":
+                route = _python_decorator_route(child, handler)
+                if route is not None:
+                    routes.append(route)
+    for child in node.children:
+        _walk_python_routes(child, routes)
+
+
+def _python_decorator_route(decorator: Node, handler: str) -> HttpEndpointDecl | None:
+    call = next((c for c in decorator.children if c.type == "call"), None)
+    if call is None:
+        return None
+    func = call.child_by_field_name("function")
+    if func is None or func.type != "attribute":
+        return None
+    verb = _text_of(func.child_by_field_name("attribute")).lower()
+    if verb not in _HTTP_VERBS:
+        return None
+    args = call.child_by_field_name("arguments")
+    path = _first_string_arg(args)
+    if path is None:
+        return None
+    return HttpEndpointDecl(verb.upper(), _join_path("", path), handler)
+
+
+def _walk_ts_http_calls(node: Node, calls: list[HttpCallDecl]) -> None:
+    if node.type == "call_expression":
+        call = _ts_http_call(node)
+        if call is not None:
+            calls.append(call)
+    for child in node.children:
+        _walk_ts_http_calls(child, calls)
+
+
+def _ts_http_call(node: Node) -> HttpCallDecl | None:
+    func = node.child_by_field_name("function")
+    args = node.child_by_field_name("arguments")
+    if func is None:
+        return None
+    if func.type == "identifier" and _text_of(func) == "fetch":
+        path = _first_string_arg(args)
+        return HttpCallDecl("ANY", path) if path is not None and _is_url(path) else None
+    if func.type == "member_expression":
+        verb = _text_of(func.child_by_field_name("property")).lower()
+        receiver = _text_of(func.child_by_field_name("object")).lower()
+        if verb in _HTTP_VERBS and ("http" in receiver or "axios" in receiver):
+            path = _first_string_arg(args)
+            if path is not None and _is_url(path):
+                return HttpCallDecl(verb.upper(), path)
+    return None
+
+
+def _first_string_arg(args: Node | None) -> str | None:
+    if args is None:
+        return None
+    for child in args.children:
+        if child.type in ("string", "string_literal", "template_string"):
+            return _string_value(child)
+    return None
+
+
+def _is_url(path: str) -> bool:
+    return path.startswith(("/", "http"))

@@ -119,6 +119,59 @@ class X {
     assert "alsoIgnored" not in parsed.calls
 
 
+def test_spring_routes_extracted_with_class_base(parser: TreeSitterParser) -> None:
+    src = b"""package com.demo;
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+    @GetMapping("/{id}")
+    public Order get(Long id) { return null; }
+    @PostMapping
+    public Order create() { return null; }
+}
+"""
+    parsed = parser.parse("OrderController.java", Language.JAVA, src)
+    routes = {(r.method, r.path) for r in parsed.routes}
+    assert ("GET", "/api/orders/{id}") in routes
+    assert ("POST", "/api/orders") in routes
+
+
+def test_fastapi_routes_extracted(parser: TreeSitterParser) -> None:
+    src = b"""from fastapi import APIRouter
+router = APIRouter()
+
+@router.get("/users")
+def list_users():
+    return []
+
+@router.post("/users/{uid}/orders")
+def place(uid):
+    return None
+"""
+    parsed = parser.parse("api.py", Language.PYTHON, src)
+    routes = {(r.method, r.path) for r in parsed.routes}
+    assert ("GET", "/users") in routes
+    assert ("POST", "/users/{uid}/orders") in routes
+
+
+def test_ts_http_calls_extracted_and_dynamic_skipped(parser: TreeSitterParser) -> None:
+    src = b"""export class OrdersService {
+    constructor(private http) {}
+    list() { return this.http.get('/api/orders'); }
+    create(o) { return this.http.post('/api/orders', o); }
+    one(id) { return this.http.get(`/api/orders/${id}`); }
+    notAnApi() { const m = new Map(); return m.get('key'); }
+}
+"""
+    parsed = parser.parse("orders.service.ts", Language.TYPESCRIPT, src)
+    calls = {(c.method, c.path) for c in parsed.http_calls}
+    assert ("GET", "/api/orders") in calls
+    assert ("POST", "/api/orders") in calls
+    assert not any(c.path == "key" for c in parsed.http_calls)  # map.get ignored
+    # dynamic template path is skipped (not a static literal)
+    assert not any("${" in c.path for c in parsed.http_calls)
+
+
 def test_unsupported_language_counts_loc_only(parser: TreeSitterParser) -> None:
     assert parser.supports(Language.HTML) is False
     parsed = parser.parse("a.html", Language.HTML, b"<div>\n<span>\n</div>\n")
