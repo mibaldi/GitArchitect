@@ -24,11 +24,14 @@ from codebase_architect.domain.model.finding import Finding
 from codebase_architect.domain.model.module import ModuleEdge, ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.services.architecture_rules import analyze_architecture
+from codebase_architect.domain.services.call_graph import build_call_edges
 from codebase_architect.domain.services.features_static import derive_static_features
 
 # Caps keep generated diagrams readable on large codebases.
 _MAX_GRAPH_NODES = 60
 _MAX_FLOWS = 20
+_MAX_FLOW_DEPTH = 3
+_MAX_FLOW_NODES = 12
 
 
 def build_documentation(
@@ -49,7 +52,7 @@ def build_documentation(
         _modules_page(graph),
         _features_page(narrative, entrypoints),
         _entrypoints_page(entrypoints),
-        _flows_page(entrypoints, graph, narrative),
+        _flows_page(entrypoints, graph, model, narrative),
         _dependencies_page(model),
         _security_page(findings),
     )
@@ -226,11 +229,18 @@ def _entrypoints_page(entrypoints: list[Entrypoint]) -> DocPage:
 def _flows_page(
     entrypoints: list[Entrypoint],
     graph: ModuleGraph,
+    model: CodeModel,
     narrative: NarrativeReport | None,
 ) -> DocPage:
+    # Trace each entrypoint through what its module transitively depends on or
+    # calls, combining the import graph with the (name-resolved) call graph.
+    adjacency = _combined_adjacency(graph, build_call_edges(model))
     sections: list[DocSection] = [
         DocSection(
-            body="Flows derived from entrypoints and their module dependencies."
+            body=(
+                "Flows traced from each entrypoint through the modules it "
+                "transitively depends on or calls."
+            )
         )
     ]
     flow_text = narrative.flows if narrative else {}
@@ -238,11 +248,11 @@ def _flows_page(
     for ep in entrypoints:
         if shown >= _MAX_FLOWS:
             break
-        deps = graph.dependencies_of(ep.module)
+        edges = _flow_subgraph(ep.module, adjacency)
         description = flow_text.get(ep.name, "")
-        if not deps and not description:
+        if not edges and not description:
             continue
-        diagram = _flow_diagram(ep, deps) if deps else None
+        diagram = _flow_diagram(ep, edges) if edges else None
         sections.append(
             DocSection(
                 heading=f"{ep.name} ({ep.kind.value})",
@@ -254,6 +264,38 @@ def _flows_page(
     if shown == 0:
         sections.append(DocSection(body="_No multi-module flows detected._"))
     return DocPage(slug="flows", title="Flows", sections=tuple(sections))
+
+
+def _combined_adjacency(
+    graph: ModuleGraph, call_edges: list[ModuleEdge]
+) -> dict[str, list[str]]:
+    pairs: set[tuple[str, str]] = {(e.source, e.target) for e in graph.edges}
+    pairs |= {(e.source, e.target) for e in call_edges}
+    adjacency: dict[str, list[str]] = {}
+    for source, target in sorted(pairs):
+        adjacency.setdefault(source, []).append(target)
+    return adjacency
+
+
+def _flow_subgraph(start: str, adjacency: dict[str, list[str]]) -> list[tuple[str, str]]:
+    """BFS from ``start`` up to depth/node caps; return edges among visited."""
+    visited = {start}
+    frontier = [start]
+    depth = 0
+    while frontier and depth < _MAX_FLOW_DEPTH and len(visited) < _MAX_FLOW_NODES:
+        nxt: list[str] = []
+        for node in sorted(frontier):
+            for target in adjacency.get(node, []):
+                if target not in visited:
+                    if len(visited) >= _MAX_FLOW_NODES:
+                        break
+                    visited.add(target)
+                    nxt.append(target)
+        frontier = nxt
+        depth += 1
+    return sorted(
+        {(s, t) for s in visited for t in adjacency.get(s, []) if t in visited}
+    )
 
 
 def _dependencies_page(model: CodeModel) -> DocPage:
@@ -342,13 +384,16 @@ def _layered_graph_diagram(
     return MermaidDiagram(title="Module dependencies", code="\n".join(lines))
 
 
-def _flow_diagram(entrypoint: Entrypoint, deps: list[ModuleEdge]) -> MermaidDiagram:
+def _flow_diagram(entrypoint: Entrypoint, edges: list[tuple[str, str]]) -> MermaidDiagram:
+    nodes = sorted({entrypoint.module} | {n for edge in edges for n in edge})
+    node_id = {module: f"m{i}" for i, module in enumerate(nodes)}
     lines = ["flowchart LR", f'    ep["{_escape(entrypoint.name)}"]']
-    targets = sorted({e.target for e in deps})
-    node_id = {t: f"m{i}" for i, t in enumerate(targets)}
-    for target in targets:
-        lines.append(f'    {node_id[target]}["{_escape(target)}"]')
-        lines.append(f"    ep --> {node_id[target]}")
+    for module in nodes:
+        lines.append(f'    {node_id[module]}["{_escape(module)}"]')
+    if entrypoint.module in node_id:
+        lines.append(f"    ep --> {node_id[entrypoint.module]}")
+    for source, target in edges:
+        lines.append(f"    {node_id[source]} --> {node_id[target]}")
     return MermaidDiagram(title=entrypoint.name, code="\n".join(lines))
 
 

@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from codebase_architect.domain.model.architecture import Architecture, Component, Layer
-from codebase_architect.domain.model.code import ImportRef, Language, ParsedFile
+from codebase_architect.domain.model.code import (
+    ImportRef,
+    Language,
+    ParsedFile,
+    Symbol,
+    SymbolKind,
+)
 from codebase_architect.domain.model.code_model import CodeModel
 from codebase_architect.domain.model.entrypoint import Entrypoint, EntrypointKind
 from codebase_architect.domain.services.documentation_builder import build_documentation
@@ -145,3 +151,48 @@ def test_features_page_derives_static_catalog_without_narrative() -> None:
     assert "HTTP API" in body
     assert "_(static)_" in body
     assert "Derived statically" in body
+
+
+def test_flows_are_transitive_across_modules() -> None:
+    # web -> service (import) and service -> repo (call) should both appear in
+    # the flow traced from the web entrypoint.
+    model = CodeModel(
+        parsed_files=[
+            ParsedFile(
+                "web/C.java",
+                Language.JAVA,
+                5,
+                symbols=(Symbol("C", SymbolKind.CLASS, 1, 4),),
+                imports=(ImportRef("com.demo.service.S"),),
+                package="com.demo.web",
+            ),
+            ParsedFile(
+                "service/S.java",
+                Language.JAVA,
+                5,
+                symbols=(Symbol("S", SymbolKind.CLASS, 1, 4),),
+                calls=("Repo",),
+                package="com.demo.service",
+            ),
+            ParsedFile(
+                "repo/Repo.java",
+                Language.JAVA,
+                5,
+                symbols=(Symbol("Repo", SymbolKind.CLASS, 1, 4),),
+                package="com.demo.repo",
+            ),
+        ]
+    )
+    docs = build_documentation(
+        title="Demo",
+        generated_at="t",
+        base_ref=None,
+        model=model,
+        graph=build_module_graph(model),
+        architecture=Architecture(),
+        entrypoints=[Entrypoint("C", EntrypointKind.HTTP_ENDPOINT, "web/C.java", "com.demo.web")],
+        narrative=None,
+    )
+    flows = {f.path: f.content for f in MarkdownMermaidRenderer().render(docs)}["flows.md"]
+    assert "com.demo.service" in flows
+    assert "com.demo.repo" in flows  # reached transitively via the call edge

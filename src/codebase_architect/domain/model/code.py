@@ -65,3 +65,6 @@ class ParsedFile:
     imports: tuple[ImportRef, ...] = ()
     #: Namespace/package the file declares, when the language has one.
     package: str | None = None
+    #: Names referenced as calls/instantiations (e.g. ``new Foo()``, ``foo()``),
+    #: used to build a call graph on top of the import graph.
+    calls: tuple[str, ...] = ()

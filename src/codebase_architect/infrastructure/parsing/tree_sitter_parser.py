@@ -39,6 +39,8 @@ class _LangSpec:
     # How to read the imported target: "text" (whole node text) or "source"
     # (a string literal child field, used by ECMAScript import statements).
     import_style: str = "text"
+    # Node types that denote a call/instantiation, used for the call graph.
+    call_types: frozenset[str] = frozenset()
     parser: Parser = field(init=False)
 
     def __post_init__(self) -> None:
@@ -60,6 +62,7 @@ def _build_specs() -> dict[Language, _LangSpec]:
         import_types=frozenset({"import_declaration"}),
         package_types=frozenset({"package_declaration"}),
         import_style="text",
+        call_types=frozenset({"object_creation_expression", "method_invocation"}),
     )
     kotlin = _LangSpec(
         ts_language=TSLanguage(tree_sitter_kotlin.language()),
@@ -71,6 +74,7 @@ def _build_specs() -> dict[Language, _LangSpec]:
         import_types=frozenset({"import"}),
         package_types=frozenset({"package_header"}),
         import_style="text",
+        call_types=frozenset({"call_expression"}),
     )
     ts_symbols = {
         "class_declaration": SymbolKind.CLASS,
@@ -81,17 +85,20 @@ def _build_specs() -> dict[Language, _LangSpec]:
         "function_signature": SymbolKind.FUNCTION,
         "method_definition": SymbolKind.METHOD,
     }
+    ts_calls = frozenset({"call_expression", "new_expression"})
     typescript = _LangSpec(
         ts_language=TSLanguage(tree_sitter_typescript.language_typescript()),
         symbols=ts_symbols,
         import_types=frozenset({"import_statement"}),
         import_style="source",
+        call_types=ts_calls,
     )
     tsx = _LangSpec(
         ts_language=TSLanguage(tree_sitter_typescript.language_tsx()),
         symbols=ts_symbols,
         import_types=frozenset({"import_statement"}),
         import_style="source",
+        call_types=ts_calls,
     )
     python = _LangSpec(
         ts_language=TSLanguage(tree_sitter_python.language()),
@@ -101,6 +108,7 @@ def _build_specs() -> dict[Language, _LangSpec]:
         },
         import_types=frozenset({"import_statement", "import_from_statement"}),
         import_style="python",
+        call_types=frozenset({"call"}),
     )
     return {
         Language.JAVA: java,
@@ -133,6 +141,7 @@ class TreeSitterParser(CodeParser):
         tree = spec.parser.parse(content)
         symbols: list[Symbol] = []
         imports: list[ImportRef] = []
+        calls: set[str] = set()
         package: str | None = None
 
         stack: list[Node] = [tree.root_node]
@@ -156,6 +165,10 @@ class TreeSitterParser(CodeParser):
                     imports.append(ImportRef(target=target))
             elif node.type in spec.package_types:
                 package = _package_name(node)
+            elif node.type in spec.call_types:
+                callee = _call_target(node)
+                if callee:
+                    calls.add(callee)
             stack.extend(node.children)
 
         return ParsedFile(
@@ -165,6 +178,7 @@ class TreeSitterParser(CodeParser):
             symbols=tuple(symbols),
             imports=tuple(imports),
             package=package,
+            calls=tuple(sorted(calls)),
         )
 
 
@@ -211,6 +225,48 @@ def _python_import_target(node: Node) -> str | None:
         if target.type in ("dotted_name", "identifier") and target.text is not None:
             return target.text.decode("utf-8", "replace").strip()
     return None
+
+
+_IDENT_TYPES = frozenset(
+    {"identifier", "type_identifier", "simple_identifier", "scoped_type_identifier"}
+)
+
+
+def _call_target(node: Node) -> str | None:
+    """Best-effort callee/type name for a call or instantiation node.
+
+    Only resolvable *names* are returned (constructor types and unqualified
+    function calls); member calls like ``obj.method()`` are skipped to keep the
+    call graph low-noise. Generic args and package qualifiers are stripped to the
+    simple name so it can be matched against declared symbols.
+    """
+    t = node.type
+    target: Node | None = None
+    if t == "object_creation_expression":  # Java: new Foo()
+        target = node.child_by_field_name("type")
+    elif t == "new_expression":  # TypeScript: new Foo()
+        target = node.child_by_field_name("constructor")
+    elif t == "method_invocation":  # Java: foo()  (skip obj.foo())
+        if node.child_by_field_name("object") is None:
+            target = node.child_by_field_name("name")
+    elif t == "call":  # Python: foo() / Foo()  (skip obj.foo())
+        target = node.child_by_field_name("function")
+    elif t == "call_expression":  # TypeScript/JS and Kotlin
+        fn = node.child_by_field_name("function")
+        if fn is not None:
+            target = fn  # TypeScript/JS
+        elif node.named_child_count:
+            target = node.named_children[0]  # Kotlin: callee is the first child
+    return _simple_name(target)
+
+
+def _simple_name(node: Node | None) -> str | None:
+    if node is None or node.type not in _IDENT_TYPES or node.text is None:
+        return None
+    name = node.text.decode("utf-8", "replace").strip()
+    name = name.split("<", 1)[0]  # drop generic args
+    name = name.rsplit(".", 1)[-1]  # drop package/scope qualifier
+    return name or None
 
 
 def _package_name(node: Node) -> str | None:
