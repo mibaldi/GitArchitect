@@ -247,6 +247,16 @@ class FunctionalSpecPayload(BaseModel):
     linked_scan_ids: list[str] = []
 
 
+class DocumentRequest(BaseModel):
+    """Options for assembling the spec document (optional AI enrichment)."""
+
+    enrich: bool = False
+    ai_provider: str | None = None
+    ai_api_key: str | None = None
+    ai_base_url: str | None = None
+    ai_model: str | None = None
+
+
 class FunctionalSpecResponse(FunctionalSpecPayload):
     id: str
     created_at: str

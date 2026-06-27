@@ -579,8 +579,10 @@ function renderMermaidIn(el) {
 }
 $("recDocBtn").onclick = async () => {
   $("recFlowErr").textContent = "";
+  const enrich = !!(LS("provider") || LS("apiKey") || LS("baseUrl"));
+  const body = { enrich, ai_provider: LS("provider") || null, ai_api_key: LS("apiKey") || null, ai_base_url: LS("baseUrl") || null, ai_model: LS("model") || null };
   try {
-    const r = await fetch(`/specs/${recSpecId}/document`);
+    const r = await fetch(`/specs/${recSpecId}/document`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || ("HTTP " + r.status));
     const blob = await r.blob();
     const a = document.createElement("a");
