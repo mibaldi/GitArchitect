@@ -14,17 +14,27 @@ architect scan <source> --out ./docs-output
 `<source>` can be a remote Git repo, a local Git repo, a folder, a `.zip` or a
 `.tar.gz`.
 
-It also exposes a REST API (the `api` extra):
+It also exposes a **web dashboard + REST API** (the `api` extra):
 
 ```
-architect serve --port 8000
+architect serve            # dashboard + API on http://127.0.0.1:47800
+```
+
+Open `http://127.0.0.1:47800/` for the dashboard — pick a source, launch a
+scan, watch its status, download the bundle, and view the documentation
+(Markdown + Mermaid) rendered live in the browser. REST endpoints:
+
+```
 # POST /scans {"location": "...", "static_only": true}  -> 202 {id, status}
 # GET  /scans/{id}                  scan status + summary
 # GET  /scans/{id}/documentation    generated pages
+# GET  /scans/{id}/pages/{slug}     one page's Markdown
 # GET  /scans/{id}/download         documentation bundle as a .zip
 ```
 
 Scans run asynchronously; poll the status endpoint until it reports `done`.
+The API uses a non-standard port (47800) and is not coupled to a UI build —
+everything ships in one container.
 
 ### AI providers & plugins
 

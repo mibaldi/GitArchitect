@@ -64,6 +64,10 @@ ignore = []
 [tool.ruff.lint.isort]
 known-first-party = ["codebase_architect"]
 
+[tool.ruff.lint.per-file-ignores]
+# Embedded HTML/CSS/JS dashboard template — line length doesn't apply.
+"src/codebase_architect/api/dashboard.py" = ["E501"]
+
 [tool.ruff.lint.flake8-bugbear]
 # Typer and FastAPI both call these in parameter defaults by design.
 extend-immutable-calls = ["typer.Option", "typer.Argument", "fastapi.Depends"]

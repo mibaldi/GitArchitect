@@ -1,18 +1,20 @@
-# Run the Codebase Architect REST API:
-#   docker compose up --build
-#   curl localhost:8000/health
+# Run the Codebase Architect web dashboard + REST API:
+#   docker compose up --build -d
 #
-# Scan a local project by mounting it (see the commented volume below) and
-# POSTing its in-container path:
-#   curl -X POST localhost:8000/scans \
-#     -H 'content-type: application/json' \
-#     -d '{"location": "/scan/myproject", "static_only": true}'
+# The app binds to 127.0.0.1:47800 on the host only (non-standard port, not
+# publicly exposed). Reach it over your tailnet with Tailscale Serve:
+#   tailscale serve --bg 47800
+# then open the MagicDNS URL it prints. Or, on the box itself: localhost:47800
+#
+# To scan a local project, mount it (see the commented volume) and use its
+# in-container path as the scan "Source".
 services:
   api:
     build: .
     image: codebase-architect
     ports:
-      - "8000:8000"
+      # host-only bind; Tailscale Serve (or an SSH tunnel) exposes it to you.
+      - "127.0.0.1:47800:47800"
     environment:
       CA_AI__DEFAULT_PROVIDER: ${CA_AI__DEFAULT_PROVIDER:-claude}
       # Provide a key to enable the AI narrative; without it scans run static-only.
@@ -20,12 +22,13 @@ services:
     volumes:
       - ca-data:/data
       - ca-workspaces:/workspaces
-      # Mount a project to scan it (read-only), then POST {"location": "/scan/<name>"}:
+      # Mount a project to scan it (read-only), then use "/scan/<name>" as the Source:
       # - ./myproject:/scan/myproject:ro
+    restart: unless-stopped
 
-  # Persistence services for later phases (API/worker state in a DB + a queue).
-  # The app currently keeps scan state in memory, so these are opt-in:
-  #   docker compose --profile full up --build
+  # Persistence services for later phases (DB + queue). The app currently keeps
+  # scan state in memory, so these are opt-in and also use non-standard ports:
+  #   docker compose --profile full up -d
   postgres:
     image: postgres:16-alpine
     profiles: ["full"]
@@ -34,7 +37,7 @@ services:
       POSTGRES_PASSWORD: architect
       POSTGRES_DB: architect
     ports:
-      - "5432:5432"
+      - "127.0.0.1:45432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -47,7 +50,7 @@ services:
     image: redis:7-alpine
     profiles: ["full"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:46379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

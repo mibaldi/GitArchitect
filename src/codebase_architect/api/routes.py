@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
+from codebase_architect.api.dashboard import INDEX_HTML
 from codebase_architect.api.schemas import (
     ArchitectureResponse,
     CodeModelResponse,
@@ -49,6 +50,12 @@ def _require_done(job: ScanJob) -> ScanJob:
     if job.status is not ScanStatus.DONE or job.result is None:
         raise HTTPException(status_code=409, detail=f"Scan not finished (status: {job.status})")
     return job
+
+
+@router.get("/", response_class=HTMLResponse, include_in_schema=False)
+def dashboard() -> str:
+    """Serve the web dashboard."""
+    return INDEX_HTML
 
 
 @router.get("/health")
@@ -109,6 +116,22 @@ def get_architecture(
     job = _require_done(_job_or_404(service, scan_id))
     assert job.result is not None
     return to_architecture_response(job.result)
+
+
+@router.get("/scans/{scan_id}/pages/{slug}")
+def get_page(
+    scan_id: str, slug: str, service: ScanService = Depends(get_service)
+) -> dict[str, str]:
+    """Return one documentation page's Markdown (for the dashboard's live view)."""
+    job = _require_done(_job_or_404(service, scan_id))
+    assert job.result is not None
+    titles = {p.slug: p.title for p in job.result.documentation.pages}
+    if slug not in titles or job.docs_dir is None:
+        raise HTTPException(status_code=404, detail=f"No such page: {slug}")
+    path = Path(job.docs_dir) / f"{slug}.md"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Page file not found")
+    return {"slug": slug, "title": titles[slug], "markdown": path.read_text(encoding="utf-8")}
 
 
 @router.get("/scans/{scan_id}/download")
