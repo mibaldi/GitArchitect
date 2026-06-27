@@ -210,6 +210,10 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .group-pick input { width: auto; }
 .group-pick span { font-size: .85rem; color: var(--text); }
 .group-tags { width: 150px; font-size: .76rem; padding: 4px 8px; }
+.scan-controls { display: flex; gap: 6px; margin: 0 0 8px; }
+.scan-controls input { flex: 1; font-size: .78rem; padding: 5px 8px; }
+.scan-controls select { font-size: .78rem; padding: 5px 6px; width: auto; }
+.scan-list .tag { cursor: pointer; }
 
 .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -266,6 +270,15 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
     </form>
     <div class="scans">
       <h3>Recent scans</h3>
+      <div class="scan-controls">
+        <input id="scanFilter" placeholder="Filter by title, tag or id…">
+        <select id="scanSort">
+          <option value="newest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="name">Name</option>
+          <option value="status">Status</option>
+        </select>
+      </div>
       <ul class="scan-list" id="scanList"></ul>
     </div>
   </aside>
@@ -689,20 +702,42 @@ async function api(path, opts) {
   return (r.headers.get("content-type") || "").includes("json") ? r.json() : r.text();
 }
 
+let allScans = [];
 async function refreshScans() {
-  const scans = await api("/scans");
+  allScans = await api("/scans");
+  renderScans();
+}
+function renderScans() {
   const ul = $("scanList");
-  ul.innerHTML = scans.length ? "" : '<li style="cursor:default;color:var(--muted)">No scans yet</li>';
-  scans.reverse().forEach(s => {
+  const q = $("scanFilter").value.trim().toLowerCase();
+  const sort = $("scanSort").value;
+  let scans = allScans.filter(s => {
+    if (!q) return true;
+    const hay = [s.title || "", s.id, ...(s.tags || [])].join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+  const rank = { running: 0, queued: 1, done: 2, failed: 3 };
+  scans = scans.slice().sort((a, b) => {
+    if (sort === "name") return (a.title || a.id).localeCompare(b.title || b.id);
+    if (sort === "status") return (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
+    const cmp = (a.created_at || "").localeCompare(b.created_at || "");
+    return sort === "oldest" ? cmp : -cmp;
+  });
+  ul.innerHTML = scans.length ? "" : `<li style="cursor:default;color:var(--muted)">${allScans.length ? "No matches" : "No scans yet"}</li>`;
+  scans.forEach(s => {
     const li = document.createElement("li");
     if (s.id === current) li.className = "active";
     const name = s.title ? esc(s.title) : `scan <span>${s.id.slice(5, 13)}</span>`;
-    const tags = (s.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join("");
+    const tags = (s.tags || []).map(t => `<span class="tag" data-tag="${esc(t)}">${esc(t)}</span>`).join("");
     li.innerHTML = `<span class="name">${name}${tags}</span><span class="badge ${s.status}">${s.status}</span>`;
     li.onclick = () => selectScan(s.id);
+    li.querySelectorAll(".tag").forEach(el => el.onclick = ev => { ev.stopPropagation(); $("scanFilter").value = el.dataset.tag; renderScans(); });
     ul.appendChild(li);
   });
 }
+$("scanFilter").addEventListener("input", renderScans);
+$("scanSort").addEventListener("change", () => { SET("scanSort", $("scanSort").value); renderScans(); });
+if (LS("scanSort")) $("scanSort").value = LS("scanSort");
 
 $("scanForm").onsubmit = async e => {
   e.preventDefault();

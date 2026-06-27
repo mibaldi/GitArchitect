@@ -95,7 +95,11 @@ def _job_or_404(service: ScanService, scan_id: str) -> ScanJob:
 
 def _scan_ref(job: ScanJob) -> ScanRef:
     return ScanRef(
-        id=job.id, status=job.status, title=job.options.title, tags=list(job.options.tags)
+        id=job.id,
+        status=job.status,
+        title=job.options.title,
+        tags=list(job.options.tags),
+        created_at=job.created_at,
     )
 
 
