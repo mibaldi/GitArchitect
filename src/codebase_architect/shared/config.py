@@ -28,6 +28,20 @@ class AISettings(BaseModel):
     cache_enabled: bool = True
 
 
+class CliRunnerSettings(BaseModel):
+    """Remote CLI runner (an already-authenticated Claude/Codex CLI over HTTP).
+
+    No provider API keys and no local model — GitArchitect POSTs prompts to a
+    runner (e.g. a Mac on your tailnet) that runs the CLI and returns its text.
+    """
+
+    base_url: str | None = None  # e.g. http://100.x.x.x:8787
+    agent: str = "claude"  # "claude" | "codex"
+    timeout_seconds: int = 600
+    shared_secret: str | None = None
+    working_dir: str | None = None  # path on the runner host (within its allowlist)
+
+
 class GitSettings(BaseModel):
     enabled: bool = True
 
@@ -64,6 +78,7 @@ class Settings(BaseSettings):
 
     scan: ScanSettings = Field(default_factory=ScanSettings)
     ai: AISettings = Field(default_factory=AISettings)
+    cli_runner: CliRunnerSettings = Field(default_factory=CliRunnerSettings)
     git: GitSettings = Field(default_factory=GitSettings)
 
 

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from codebase_architect.application.registries.plugins import discover_plugins
 from codebase_architect.domain.ports.ai_provider import AIProvider
 from codebase_architect.infrastructure.ai_providers.claude import ClaudeProvider
+from codebase_architect.infrastructure.ai_providers.cli_runner import CliRunnerProvider
 from codebase_architect.infrastructure.ai_providers.gemini import GeminiProvider
 from codebase_architect.infrastructure.ai_providers.null import NullAIProvider
 from codebase_architect.infrastructure.ai_providers.openai_compatible import (
@@ -33,6 +34,8 @@ _BUILTINS: dict[str, Callable[..., AIProvider]] = {
     "local": LocalProvider,
     "gemini": GeminiProvider,
     "google": GeminiProvider,
+    "cli_runner": CliRunnerProvider,
+    "cli": CliRunnerProvider,
     "null": NullAIProvider,
     "none": NullAIProvider,
     "static": NullAIProvider,

@@ -284,7 +284,7 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
       <select id="provider">
         <option value="">(config default)</option>
         <option>claude</option><option>openai</option><option>openrouter</option>
-        <option>gemini</option><option>local</option>
+        <option>gemini</option><option>local</option><option>cli_runner</option>
       </select>
       <label>API key</label>
       <input id="apiKey" type="password" placeholder="sk-… (empty for a local runner)">
