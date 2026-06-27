@@ -149,6 +149,56 @@ def test_upload_rejects_unsupported_type(client: TestClient) -> None:
     assert response.status_code == 400
 
 
+def _spec_payload() -> dict:
+    return {
+        "product": "Demo",
+        "objective": "Greet people",
+        "actors": ["User"],
+        "features": [
+            {
+                "name": "Greet",
+                "actors": ["User"],
+                "goal": "Say hi",
+                "main_flow": [
+                    {"actor": "User", "action": "opens app", "target": "Frontend"},
+                    {"actor": "Frontend", "action": "GET /greet", "target": "Backend"},
+                ],
+                "systems": ["Frontend", "Backend"],
+                "endpoints": [{"method": "GET", "path": "/greet"}],
+            }
+        ],
+    }
+
+
+def test_spec_crud_and_persistence(tmp_path: Path) -> None:
+    settings = Settings(
+        workspaces_dir=str(tmp_path / "ws"),
+        data_dir=str(tmp_path / "data"),
+    )
+    app = TestClient(create_app(settings))
+
+    created = app.post("/specs", json=_spec_payload())
+    assert created.status_code == 201
+    spec_id = created.json()["id"]
+    assert created.json()["features"][0]["main_flow"][1]["target"] == "Backend"
+
+    # Update preserves id, list shows a summary.
+    payload = _spec_payload()
+    payload["product"] = "Renamed"
+    assert app.put(f"/specs/{spec_id}", json=payload).json()["product"] == "Renamed"
+    summaries = app.get("/specs").json()
+    assert summaries[0]["id"] == spec_id and summaries[0]["features"] == 1
+
+    # A fresh app over the same data dir still has the spec.
+    restarted = TestClient(create_app(settings))
+    got = restarted.get(f"/specs/{spec_id}").json()
+    assert got["product"] == "Renamed"
+    assert got["features"][0]["endpoints"][0] == {"method": "GET", "path": "/greet"}
+
+    assert restarted.delete(f"/specs/{spec_id}").status_code == 204
+    assert restarted.get(f"/specs/{spec_id}").status_code == 404
+
+
 def test_scans_persist_across_restart(tmp_path: Path, project: Path) -> None:
     settings = Settings(
         workspaces_dir=str(tmp_path / "ws"),

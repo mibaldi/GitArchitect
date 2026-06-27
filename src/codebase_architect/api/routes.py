@@ -22,9 +22,15 @@ from codebase_architect.api.schemas import (
     ArchitectureResponse,
     CodeModelResponse,
     DocumentationResponse,
+    FunctionalSpecPayload,
+    FunctionalSpecResponse,
     ScanRef,
     ScanRequest,
     ScanStatusResponse,
+    SpecSummaryResponse,
+    spec_payload_to_domain,
+    spec_summary,
+    spec_to_response,
     to_architecture_response,
     to_code_model_response,
     to_documentation_response,
@@ -36,6 +42,7 @@ from codebase_architect.application.services.scan_service import (
     ScanService,
     ScanStatus,
 )
+from codebase_architect.application.services.spec_service import SpecService
 from codebase_architect.infrastructure.export.zip_archive import zip_directory
 from codebase_architect.shared.errors import NotFoundError
 
@@ -44,6 +51,11 @@ router = APIRouter()
 
 def get_service(request: Request) -> ScanService:
     service: ScanService = request.app.state.scan_service
+    return service
+
+
+def get_spec_service(request: Request) -> SpecService:
+    service: SpecService = request.app.state.spec_service
     return service
 
 
@@ -240,3 +252,55 @@ def download_documentation(
         media_type="application/zip",
         filename=f"{scan_id}-documentation.zip",
     )
+
+
+# -- Functional specs (phase B) ---------------------------------------------
+
+
+def _spec_or_404(service: SpecService, spec_id: str) -> FunctionalSpecResponse:
+    try:
+        return spec_to_response(service.get(spec_id))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/specs", status_code=201, response_model=FunctionalSpecResponse)
+def create_spec(
+    payload: FunctionalSpecPayload,
+    service: SpecService = Depends(get_spec_service),
+) -> FunctionalSpecResponse:
+    spec = service.create(spec_payload_to_domain(payload))
+    return spec_to_response(spec)
+
+
+@router.get("/specs", response_model=list[SpecSummaryResponse])
+def list_specs(service: SpecService = Depends(get_spec_service)) -> list[SpecSummaryResponse]:
+    return [spec_summary(s) for s in service.list()]
+
+
+@router.get("/specs/{spec_id}", response_model=FunctionalSpecResponse)
+def get_spec(
+    spec_id: str, service: SpecService = Depends(get_spec_service)
+) -> FunctionalSpecResponse:
+    return _spec_or_404(service, spec_id)
+
+
+@router.put("/specs/{spec_id}", response_model=FunctionalSpecResponse)
+def update_spec(
+    spec_id: str,
+    payload: FunctionalSpecPayload,
+    service: SpecService = Depends(get_spec_service),
+) -> FunctionalSpecResponse:
+    try:
+        spec = service.update(spec_id, spec_payload_to_domain(payload, spec_id))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return spec_to_response(spec)
+
+
+@router.delete("/specs/{spec_id}", status_code=204)
+def delete_spec(spec_id: str, service: SpecService = Depends(get_spec_service)) -> None:
+    try:
+        service.delete(spec_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

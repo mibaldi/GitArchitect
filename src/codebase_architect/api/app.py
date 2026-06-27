@@ -15,6 +15,7 @@ from codebase_architect.api.routes import router
 from codebase_architect.application.pipeline.scan_pipeline import ScanPipeline
 from codebase_architect.application.registries.source_resolver import SourceProviderResolver
 from codebase_architect.application.services.scan_service import ScanService
+from codebase_architect.application.services.spec_service import SpecService
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
 from codebase_architect.domain.ports.ai_provider import AIProvider
@@ -24,6 +25,7 @@ from codebase_architect.infrastructure.detection.manifest_detector import Compos
 from codebase_architect.infrastructure.export.folder_exporter import FolderExporter
 from codebase_architect.infrastructure.parsing.tree_sitter_parser import TreeSitterParser
 from codebase_architect.infrastructure.persistence.file_scan_store import FileScanStore
+from codebase_architect.infrastructure.persistence.file_spec_store import FileSpecStore
 from codebase_architect.infrastructure.rendering.markdown_renderer import MarkdownMermaidRenderer
 from codebase_architect.infrastructure.security.secret_scanner import RegexSecretScanner
 from codebase_architect.infrastructure.source_providers import default_source_providers
@@ -66,5 +68,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     store = FileScanStore(Path(settings.data_dir) / "scan-records")
     app.state.scan_service = ScanService(build_pipeline, artifacts_dir, store=store)
+    app.state.spec_service = SpecService(FileSpecStore(Path(settings.data_dir) / "specs"))
     app.include_router(router)
     return app
