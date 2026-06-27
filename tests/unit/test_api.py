@@ -259,6 +259,17 @@ def test_api_flow_across_separately_scanned_projects(
     )
 
 
+def test_sequence_diagrams_endpoint(client: TestClient) -> None:
+    payload = _spec_payload()  # has a "Greet" feature with a main_flow
+    spec_id = client.post("/specs", json=payload).json()["id"]
+    resp = client.get(f"/specs/{spec_id}/sequence").json()
+    assert resp["spec_id"] == spec_id
+    assert len(resp["diagrams"]) == 1
+    mermaid = resp["diagrams"][0]["mermaid"]
+    assert mermaid.startswith("sequenceDiagram")
+    assert "Frontend" in mermaid and "Backend" in mermaid
+
+
 def test_scans_persist_across_restart(tmp_path: Path, project: Path) -> None:
     settings = Settings(
         workspaces_dir=str(tmp_path / "ws"),

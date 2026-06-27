@@ -91,14 +91,18 @@ def _lookup(
     return hits
 
 
-def _canon(path: str) -> str:
-    # Drop scheme/host and query, collapse path params to a single placeholder.
+def canon_path(path: str) -> str:
+    """Canonical form for path matching: no host/query, params -> ``{}``."""
     path = path.split("?", 1)[0].split("#", 1)[0]
     if "://" in path:
         after_host = path.split("://", 1)[1]
         path = "/" + after_host.split("/", 1)[1] if "/" in after_host else "/"
     path = _PARAM.sub("{}", path)
     return path.rstrip("/").lower() or "/"
+
+
+def _canon(path: str) -> str:
+    return canon_path(path)
 
 
 def _dedupe(edges: list[ApiFlowEdge]) -> list[ApiFlowEdge]:

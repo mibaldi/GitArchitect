@@ -341,7 +341,10 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
       <div class="spec-field">Project group — link the scans that make up this product</div>
       <p class="spec-hint">Scanned separately (frontend, backend, microservices). Linking lets the API flow match calls in one to endpoints in another.</p>
       <div id="recGroup"></div>
-      <button class="btn" id="recFlowBtn" style="margin-top:10px">Compute API flow</button>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn" id="recFlowBtn">Compute API flow</button>
+        <button class="btn" id="recSeqBtn" style="background:var(--surface-2);color:var(--text)">Sequence diagrams</button>
+      </div>
       <div class="err" id="recFlowErr"></div>
       <div id="recFlow" style="margin-top:12px"></div>
     </div>
@@ -568,6 +571,17 @@ function renderMermaidIn(el) {
   const nodes = el.querySelectorAll(".mermaid");
   try { if (nodes.length && window.mermaid) mermaid.run({ nodes }); } catch (_) {}
 }
+$("recSeqBtn").onclick = async () => {
+  $("recFlowErr").textContent = ""; $("recFlow").innerHTML = "Building sequence diagrams…";
+  try {
+    const r = await api(`/specs/${recSpecId}/sequence`);
+    if (!r.diagrams.length) { $("recFlow").innerHTML = '<div class="cov-ev">This spec has no functionalities yet.</div>'; return; }
+    $("recFlow").innerHTML = r.diagrams.map(d =>
+      `<div class="spec-field">${esc(d.feature)}</div><div class="mermaid">${esc(d.mermaid)}</div>`
+    ).join("");
+    renderMermaidIn($("recFlow"));
+  } catch (err) { $("recFlow").innerHTML = ""; $("recFlowErr").textContent = err.message; }
+};
 $("recBack").onclick = () => { showSpecList(); loadSpecList(); };
 $("recRun").onclick = async () => {
   const scanId = $("recScan").value;

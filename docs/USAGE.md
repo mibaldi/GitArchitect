@@ -83,6 +83,25 @@ links the scan to the spec.
 curl localhost:47800/specs/<spec_id>/reconcile/<scan_id>
 ```
 
+### Cross-project flows & sequence diagrams
+
+Projects are scanned **separately**; a spec's **project group** links the scans
+that make up one product (frontend, backend, microservices). From there:
+
+- **API flow** — the matcher joins each project's outbound HTTP calls to the
+  endpoints another project exposes (template-matched method + path), giving a
+  cross-project call graph plus calls nothing serves.
+- **Sequence diagrams** — each functionality's structured flow renders as a
+  Mermaid `sequenceDiagram` (actors/systems as participants, steps as
+  request/response messages, alternative flows as `alt` blocks), with declared
+  endpoints annotated ✓ found / ✗ not found from the API flow.
+
+```bash
+curl -X POST localhost:47800/specs/<spec_id>/scans/<scan_id>   # link a scan
+curl localhost:47800/specs/<spec_id>/api-flow                  # cross-project graph
+curl localhost:47800/specs/<spec_id>/sequence                 # sequence diagrams
+```
+
 ## AI providers
 
 The AI narrative pass is provider-agnostic and **grounded in the static facts**
