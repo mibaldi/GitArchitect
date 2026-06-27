@@ -45,6 +45,8 @@ class ScanStatus(StrEnum):
 class ScanOptions:
     location: str
     title: str | None = None
+    #: Free-form labels (e.g. "frontend", "backend") to group scans into products.
+    tags: tuple[str, ...] = ()
     static_only: bool = False
     ai_provider: str | None = None
     # Per-scan AI credentials/endpoint (kept in memory only, never persisted or logged).
@@ -113,6 +115,25 @@ class ScanService:
     def list(self) -> list[ScanJob]:
         with self._lock:
             return list(self._jobs.values())
+
+    def set_meta(
+        self, scan_id: str, *, title: str | None = None, tags: tuple[str, ...] | None = None
+    ) -> ScanJob:
+        """Rename / re-tag a scan (so scans can be grouped after the fact)."""
+        import dataclasses
+
+        with self._lock:
+            job = self._jobs.get(scan_id)
+            if job is None:
+                raise NotFoundError(f"Scan not found: {scan_id}")
+            job.options = dataclasses.replace(
+                job.options,
+                title=title if title is not None else job.options.title,
+                tags=tags if tags is not None else job.options.tags,
+            )
+            if job.result is not None and self._store is not None:
+                self._persist(job, job.result)
+        return job
 
     def execute(self, scan_id: str) -> None:
         """Run the pipeline for a queued job (called from a background task)."""
@@ -183,6 +204,7 @@ def _record_from(job: ScanJob, result: ScanResult) -> ScanRecord:
         status=job.status.value,
         title=job.options.title,
         location=redact_url_credentials(job.options.location),
+        tags=job.options.tags,
         created_at=job.created_at,
         finished_at=job.finished_at,
         duration_seconds=job.duration_seconds,
@@ -228,7 +250,7 @@ def _job_from_record(record: ScanRecord) -> ScanJob | None:
     )
     return ScanJob(
         id=record.id,
-        options=ScanOptions(location=record.location, title=record.title),
+        options=ScanOptions(location=record.location, title=record.title, tags=record.tags),
         status=ScanStatus(record.status),
         result=result,
         docs_dir=Path(record.docs_dir) if record.docs_dir else None,

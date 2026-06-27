@@ -31,6 +31,7 @@ from codebase_architect.api.schemas import (
     ReconciliationResponse,
     RunnerCheckRequest,
     RunnerCheckResponse,
+    ScanMetaRequest,
     ScanRef,
     ScanRequest,
     ScanStatusResponse,
@@ -92,6 +93,12 @@ def _job_or_404(service: ScanService, scan_id: str) -> ScanJob:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _scan_ref(job: ScanJob) -> ScanRef:
+    return ScanRef(
+        id=job.id, status=job.status, title=job.options.title, tags=list(job.options.tags)
+    )
+
+
 def _require_done(job: ScanJob) -> ScanJob:
     if job.status is ScanStatus.FAILED:
         raise HTTPException(status_code=409, detail=f"Scan failed: {job.error}")
@@ -121,6 +128,7 @@ def create_scan(
         ScanOptions(
             location=body.location,
             title=body.title,
+            tags=tuple(body.tags),
             static_only=body.static_only,
             ai_provider=body.ai_provider,
             ai_api_key=body.ai_api_key,
@@ -129,7 +137,7 @@ def create_scan(
         )
     )
     background.add_task(service.execute, job.id)
-    return ScanRef(id=job.id, status=job.status)
+    return _scan_ref(job)
 
 
 # Archive uploads are streamed to a temp file, scanned, then deleted — nothing
@@ -144,6 +152,7 @@ async def create_scan_upload(
     background: BackgroundTasks,
     file: UploadFile = File(..., description="A .zip or .tar.gz archive of the codebase"),
     title: str | None = Form(default=None),
+    tags: str | None = Form(default=None),  # comma-separated
     static_only: bool = Form(default=False),
     ai_provider: str | None = Form(default=None),
     ai_api_key: str | None = Form(default=None),
@@ -165,6 +174,7 @@ async def create_scan_upload(
         ScanOptions(
             location=str(temp_path),
             title=title or _strip_suffix(filename, suffix),
+            tags=_split_tags(tags),
             static_only=static_only,
             ai_provider=ai_provider,
             ai_api_key=ai_api_key,
@@ -173,7 +183,11 @@ async def create_scan_upload(
         )
     )
     background.add_task(_run_and_cleanup, service, job.id, temp_path)
-    return ScanRef(id=job.id, status=job.status)
+    return _scan_ref(job)
+
+
+def _split_tags(raw: str | None) -> tuple[str, ...]:
+    return tuple(t.strip() for t in (raw or "").split(",") if t.strip())
 
 
 def _archive_suffix(filename: str) -> str | None:
@@ -214,7 +228,19 @@ def _run_and_cleanup(service: ScanService, scan_id: str, temp_path: Path) -> Non
 
 @router.get("/scans", response_model=list[ScanRef])
 def list_scans(service: ScanService = Depends(get_service)) -> list[ScanRef]:
-    return [ScanRef(id=j.id, status=j.status) for j in service.list()]
+    return [_scan_ref(j) for j in service.list()]
+
+
+@router.put("/scans/{scan_id}/meta", response_model=ScanRef)
+def set_scan_meta(
+    scan_id: str, body: ScanMetaRequest, service: ScanService = Depends(get_service)
+) -> ScanRef:
+    """Rename / re-tag a scan, so it can be grouped meaningfully after scanning."""
+    try:
+        job = service.set_meta(scan_id, title=body.title, tags=tuple(body.tags))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _scan_ref(job)
 
 
 @router.get("/scans/{scan_id}", response_model=ScanStatusResponse)

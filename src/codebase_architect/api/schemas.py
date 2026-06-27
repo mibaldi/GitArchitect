@@ -22,6 +22,7 @@ from codebase_architect.shared.redaction import redact_url_credentials
 class ScanRequest(BaseModel):
     location: str = Field(..., description="Git URL, local folder, local Git repo, .zip or .tar.gz")
     title: str | None = None
+    tags: list[str] = []
     static_only: bool = False
     ai_provider: str | None = None
     # Optional per-scan AI overrides; never echoed back in any response.
@@ -36,6 +37,13 @@ class ScanRequest(BaseModel):
 class ScanRef(BaseModel):
     id: str
     status: ScanStatus
+    title: str | None = None
+    tags: list[str] = []
+
+
+class ScanMetaRequest(BaseModel):
+    title: str | None = None
+    tags: list[str] = []
 
 
 class LanguageStatSchema(BaseModel):
@@ -70,6 +78,7 @@ class ScanStatusResponse(BaseModel):
     id: str
     status: ScanStatus
     title: str | None
+    tags: list[str] = []
     location: str
     error: str | None = None
     duration_seconds: float | None = None
@@ -162,6 +171,7 @@ def to_status_response(job: ScanJob) -> ScanStatusResponse:
         id=job.id,
         status=job.status,
         title=job.options.title,
+        tags=list(job.options.tags),
         location=redact_url_credentials(job.options.location),
         error=job.error,
         duration_seconds=job.duration_seconds,

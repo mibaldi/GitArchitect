@@ -112,6 +112,41 @@ def test_unknown_scan_is_404(client: TestClient) -> None:
     assert client.get("/scans/scan_does_not_exist").status_code == 404
 
 
+def test_scan_tags_and_meta_edit(client: TestClient, project: Path) -> None:
+    resp = client.post(
+        "/scans", json={"location": str(project), "static_only": True, "tags": ["backend"]}
+    )
+    scan_id = resp.json()["id"]
+    assert resp.json()["tags"] == ["backend"]
+
+    # rename + re-tag after the fact
+    meta = client.put(
+        f"/scans/{scan_id}/meta", json={"title": "Orders API", "tags": ["backend", "orders"]}
+    ).json()
+    assert meta["title"] == "Orders API"
+    assert meta["tags"] == ["backend", "orders"]
+
+    # surfaced in the list and the status
+    listed = {s["id"]: s for s in client.get("/scans").json()}
+    assert listed[scan_id]["title"] == "Orders API"
+    assert listed[scan_id]["tags"] == ["backend", "orders"]
+    assert client.get(f"/scans/{scan_id}").json()["tags"] == ["backend", "orders"]
+
+
+def test_scan_meta_unknown_is_404(client: TestClient) -> None:
+    assert client.put("/scans/scan_missing/meta", json={"tags": ["x"]}).status_code == 404
+
+
+def test_tags_survive_restart(tmp_path: Path, project: Path) -> None:
+    settings = Settings(workspaces_dir=str(tmp_path / "ws"), data_dir=str(tmp_path / "data"))
+    first = TestClient(create_app(settings))
+    scan_id = first.post(
+        "/scans", json={"location": str(project), "static_only": True, "tags": ["frontend"]}
+    ).json()["id"]
+    second = TestClient(create_app(settings))
+    assert second.get(f"/scans/{scan_id}").json()["tags"] == ["frontend"]
+
+
 def test_runner_check_unreachable(client: TestClient) -> None:
     resp = client.post("/ai/runner-check", json={"base_url": "http://127.0.0.1:1"})
     assert resp.status_code == 200
