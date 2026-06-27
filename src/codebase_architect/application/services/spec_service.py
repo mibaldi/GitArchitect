@@ -55,6 +55,20 @@ class SpecService:
             raise NotFoundError(f"Spec not found: {spec_id}")
         return spec
 
+    def unlink_scan(self, spec_id: str, scan_id: str) -> FunctionalSpec:
+        with self._lock:
+            spec = self._store.get(spec_id)
+            if spec is None:
+                raise NotFoundError(f"Spec not found: {spec_id}")
+            if scan_id not in spec.linked_scan_ids:
+                return spec
+            remaining = tuple(s for s in spec.linked_scan_ids if s != scan_id)
+            updated = dataclasses.replace(
+                spec, linked_scan_ids=remaining, updated_at=self._clock()
+            )
+            self._store.save(updated)
+        return updated
+
     def link_scan(self, spec_id: str, scan_id: str) -> FunctionalSpec:
         """Record that this spec has been reconciled against a scan."""
         with self._lock:

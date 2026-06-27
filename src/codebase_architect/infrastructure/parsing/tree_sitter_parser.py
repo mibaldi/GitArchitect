@@ -8,6 +8,7 @@ declaration node types per language; this is robust and fast, and degrades to
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 import tree_sitter_html
@@ -317,15 +318,20 @@ def _text_of(node: Node | None) -> str:
 
 
 def _string_value(node: Node | None) -> str | None:
-    """Literal value of a string/template node, or None if dynamic/absent."""
+    """Literal value of a string/template node.
+
+    Template interpolations (``${...}``) are collapsed to a ``{}`` placeholder so
+    a dynamic call path like ``/orders/${id}`` can still be matched against a
+    route template ``/orders/{id}``.
+    """
     if node is None:
         return None
-    if node.type == "template_string" and any(
-        c.type in ("template_substitution", "interpolation") for c in node.children
-    ):
-        return None  # has ${...} — not a static path
-    raw = _text_of(node).strip()
-    if len(raw) >= 2 and raw[0] in "\"'`" and raw[-1] in "\"'`":
+    raw = _text_of(node)
+    if node.type == "template_string":
+        inner = raw.strip("`")
+        return re.sub(r"\$\{[^}]*\}", "{}", inner)
+    raw = raw.strip()
+    if len(raw) >= 2 and raw[0] in "\"'" and raw[-1] in "\"'":
         return raw[1:-1]
     return None
 

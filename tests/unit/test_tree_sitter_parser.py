@@ -154,7 +154,7 @@ def place(uid):
     assert ("POST", "/users/{uid}/orders") in routes
 
 
-def test_ts_http_calls_extracted_and_dynamic_skipped(parser: TreeSitterParser) -> None:
+def test_ts_http_calls_extracted_with_templated_paths(parser: TreeSitterParser) -> None:
     src = b"""export class OrdersService {
     constructor(private http) {}
     list() { return this.http.get('/api/orders'); }
@@ -167,9 +167,8 @@ def test_ts_http_calls_extracted_and_dynamic_skipped(parser: TreeSitterParser) -
     calls = {(c.method, c.path) for c in parsed.http_calls}
     assert ("GET", "/api/orders") in calls
     assert ("POST", "/api/orders") in calls
+    assert ("GET", "/api/orders/{}") in calls  # dynamic segment -> {} placeholder
     assert not any(c.path == "key" for c in parsed.http_calls)  # map.get ignored
-    # dynamic template path is skipped (not a static literal)
-    assert not any("${" in c.path for c in parsed.http_calls)
 
 
 def test_unsupported_language_counts_loc_only(parser: TreeSitterParser) -> None:

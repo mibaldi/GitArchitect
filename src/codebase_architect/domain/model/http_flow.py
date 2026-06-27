@@ -29,3 +29,35 @@ class HttpCall:
     path: str
     module: str
     file: str
+
+
+@dataclass(frozen=True)
+class ApiFlowEdge:
+    """A consumer call matched to the producer endpoint that serves it."""
+
+    method: str
+    path: str
+    from_scan: str
+    from_module: str
+    to_scan: str
+    to_module: str
+    handler: str = ""
+
+
+@dataclass(frozen=True)
+class UnmatchedCall:
+    """A consumer call no scanned project was found to serve."""
+
+    method: str
+    path: str
+    from_scan: str
+    from_module: str
+
+
+@dataclass
+class ApiFlowGraph:
+    """Cross-project HTTP call graph over a set of scans."""
+
+    edges: tuple[ApiFlowEdge, ...] = ()
+    unmatched: tuple[UnmatchedCall, ...] = ()
+    scans: tuple[str, ...] = ()
