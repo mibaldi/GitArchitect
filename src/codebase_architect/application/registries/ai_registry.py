@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 AI_PROVIDER_GROUP = "codebase_architect.ai_providers"
 
-_BUILTINS: dict[str, Callable[[], AIProvider]] = {
+_BUILTINS: dict[str, Callable[..., AIProvider]] = {
     "claude": ClaudeProvider,
     "anthropic": ClaudeProvider,
     "openai": OpenAIProvider,
@@ -39,16 +39,29 @@ _BUILTINS: dict[str, Callable[[], AIProvider]] = {
 }
 
 
-def build_ai_provider(name: str | None) -> AIProvider:
-    """Return the AI provider for ``name`` (NullAIProvider when unknown/None)."""
+def build_ai_provider(
+    name: str | None,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> AIProvider:
+    """Return the AI provider for ``name`` (NullAIProvider when unknown/None).
+
+    ``api_key``/``base_url``/``model`` override the provider's defaults for a
+    single run — e.g. a key entered in the dashboard, or a ``base_url`` pointing
+    at a local runner on your tailnet. They apply to built-in providers; plugins
+    manage their own configuration.
+    """
     key = (name or "").lower()
     factory = _BUILTINS.get(key)
-    if factory is None:
-        factory = discover_plugins(AI_PROVIDER_GROUP).get(key)  # type: ignore[assignment]
-    if factory is None:
-        return NullAIProvider()
+    if factory is not None:
+        return factory(api_key=api_key, base_url=base_url, model=model)
 
-    provider = factory()
+    plugin = discover_plugins(AI_PROVIDER_GROUP).get(key)
+    if plugin is None:
+        return NullAIProvider()
+    provider = plugin()
     if not isinstance(provider, AIProvider):
         logger.warning("ai_plugin_not_conformant", name=key, type=type(provider).__name__)
         return NullAIProvider()

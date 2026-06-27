@@ -111,6 +111,26 @@ def test_unknown_scan_is_404(client: TestClient) -> None:
     assert client.get("/scans/scan_does_not_exist").status_code == 404
 
 
+def test_credentials_accepted_but_never_echoed(client: TestClient, project: Path) -> None:
+    response = client.post(
+        "/scans",
+        json={
+            "location": str(project),
+            "static_only": True,
+            "ai_provider": "local",
+            "ai_api_key": "sk-super-secret",
+            "ai_base_url": "http://100.9.9.9:11434/v1",
+            "ai_model": "llama3",
+        },
+    )
+    assert response.status_code == 202
+    scan_id = response.json()["id"]
+    status = client.get(f"/scans/{scan_id}").text
+    # The key/endpoint are kept in memory only — never returned in any response.
+    assert "sk-super-secret" not in status
+    assert "100.9.9.9" not in status
+
+
 def test_list_scans(client: TestClient, project: Path) -> None:
     scan_id = _submit(client, project)
     listed = client.get("/scans").json()

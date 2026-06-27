@@ -14,6 +14,17 @@ class NullAIProvider(AIProvider):
 
     name: ClassVar[str] = "null"
 
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        # Accepts (and ignores) credential overrides so the registry can build
+        # every provider through one uniform call.
+        pass
+
     def available(self) -> bool:
         return False
 

@@ -18,8 +18,9 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 COPY plugins ./plugins
 
-# Core + CLI + API + Claude provider, plus the example HTML renderer plugin.
-RUN pip install ".[cli,api,ai]" "./plugins/html_site"
+# Core + CLI + API + all AI providers (Claude, OpenAI/OpenRouter/local, Gemini),
+# plus the example HTML renderer plugin.
+RUN pip install ".[cli,api,ai,ai-openai,ai-gemini]" "./plugins/html_site"
 
 RUN useradd --create-home app \
     && mkdir -p /data /workspaces \

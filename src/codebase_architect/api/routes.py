@@ -75,6 +75,9 @@ def create_scan(
             title=body.title,
             static_only=body.static_only,
             ai_provider=body.ai_provider,
+            ai_api_key=body.ai_api_key,
+            ai_base_url=body.ai_base_url,
+            ai_model=body.ai_model,
         )
     )
     background.add_task(service.execute, job.id)

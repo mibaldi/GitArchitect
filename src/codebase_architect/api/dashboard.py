@@ -79,12 +79,22 @@ ul.scans li.active { background:#8882; }
         <input type="checkbox" id="staticOnly" checked>
         <label for="staticOnly" style="margin:0">Static only (no AI)</label>
       </div>
-      <label>AI provider (when not static-only)</label>
+      <h2 style="margin-top:1rem">AI agent (when not static-only)</h2>
+      <label>Provider</label>
       <select id="provider">
         <option value="">(config default)</option>
         <option>claude</option><option>openai</option><option>openrouter</option>
         <option>gemini</option><option>local</option>
       </select>
+      <label>API key</label>
+      <input id="apiKey" type="password" placeholder="sk-… (leave empty for a local runner)">
+      <label>Endpoint / base URL (optional)</label>
+      <input id="baseUrl" placeholder="http://100.x.y.z:11434/v1">
+      <label>Model (optional)</label>
+      <input id="model" placeholder="claude-opus-4-8 / gpt-4o-mini / llama3">
+      <small class="muted">Local runner (Mac mini, no tokens): pick <b>local</b> (OpenAI-compatible,
+        e.g. Ollama/Codex) or <b>claude</b> (Anthropic-compatible) and set the base URL to its
+        tailnet address. Settings are remembered in this browser.</small>
       <button class="primary" type="submit">Scan</button>
       <div id="formErr" class="err"></div>
     </form>
@@ -118,14 +128,31 @@ async function refreshScans() {
   });
 }
 
+const v = id => document.getElementById(id).value.trim();
+const CFG = ["provider", "apiKey", "baseUrl", "model"];
+
+function loadCfg() {
+  CFG.forEach(id => { const s = localStorage.getItem("ca." + id); if (s !== null) document.getElementById(id).value = s; });
+  const so = localStorage.getItem("ca.staticOnly");
+  if (so !== null) document.getElementById("staticOnly").checked = so === "1";
+}
+function saveCfg() {
+  CFG.forEach(id => localStorage.setItem("ca." + id, document.getElementById(id).value));
+  localStorage.setItem("ca.staticOnly", document.getElementById("staticOnly").checked ? "1" : "0");
+}
+
 document.getElementById("scanForm").onsubmit = async e => {
   e.preventDefault();
   document.getElementById("formErr").textContent = "";
+  saveCfg();
   const body = {
-    location: document.getElementById("location").value.trim(),
-    title: document.getElementById("title").value.trim() || null,
+    location: v("location"),
+    title: v("title") || null,
     static_only: document.getElementById("staticOnly").checked,
-    ai_provider: document.getElementById("provider").value || null,
+    ai_provider: v("provider") || null,
+    ai_api_key: v("apiKey") || null,
+    ai_base_url: v("baseUrl") || null,
+    ai_model: v("model") || null,
   };
   try {
     const { id } = await api("/scans", {
@@ -199,6 +226,7 @@ async function loadPage(slug) {
   if (blocks.length) mermaid.run({ nodes: el.querySelectorAll(".mermaid") });
 }
 
+loadCfg();
 refreshScans();
 </script>
 </body>

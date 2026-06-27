@@ -1,8 +1,9 @@
 """Claude (Anthropic) AI provider adapter.
 
-Uses the official ``anthropic`` SDK, which is an optional dependency (the ``ai``
-extra). The import is lazy so the core runs without it; selecting Claude without
-the package installed raises a clear, actionable error.
+Uses the official ``anthropic`` SDK (optional ``ai`` extra), imported lazily.
+Credentials, model and endpoint can be provided per scan (e.g. from the
+dashboard) or via ``ANTHROPIC_API_KEY``. A ``base_url`` lets you target a local
+Anthropic-compatible runner (no token spend).
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ from codebase_architect.domain.model.ai import Completion, TokenUsage
 from codebase_architect.domain.ports.ai_provider import AIProvider
 from codebase_architect.shared.errors import CapabilityUnavailableError
 
-# Default model. claude-opus-4-8 is Anthropic's current flagship; override via
-# settings when a cheaper tier is preferred for high-volume scanning.
+# Default model. claude-opus-4-8 is Anthropic's current flagship; override per
+# scan or via settings when a cheaper tier is preferred for high-volume scanning.
 _DEFAULT_MODEL = "claude-opus-4-8"
 
 
@@ -27,14 +28,25 @@ class ClaudeProvider(AIProvider):
     def __init__(
         self,
         *,
-        model: str = _DEFAULT_MODEL,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         api_key_env: str = "ANTHROPIC_API_KEY",
     ) -> None:
-        self._model = model
+        self._model = model or _DEFAULT_MODEL
+        self._api_key = api_key
+        self._base_url = base_url
         self._api_key_env = api_key_env
 
+    def _key(self) -> str | None:
+        return self._api_key or os.environ.get(self._api_key_env)
+
     def available(self) -> bool:
-        return bool(os.environ.get(self._api_key_env))
+        # A base_url means a local/compatible endpoint that may need no key.
+        return bool(self._key() or self._base_url)
+
+    def fingerprint(self) -> str:
+        return f"claude:{self._model}:{self._base_url or ''}"
 
     def complete(self, *, system: str, prompt: str, max_tokens: int = 4096) -> Completion:
         try:
@@ -45,7 +57,10 @@ class ClaudeProvider(AIProvider):
                 "pip install 'codebase-architect[ai]'"
             ) from exc
 
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(
+            api_key=self._key() or "not-needed",
+            base_url=self._base_url or None,
+        )
         message = client.messages.create(
             model=self._model,
             max_tokens=max_tokens,

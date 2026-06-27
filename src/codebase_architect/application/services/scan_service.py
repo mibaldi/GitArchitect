@@ -42,6 +42,10 @@ class ScanOptions:
     title: str | None = None
     static_only: bool = False
     ai_provider: str | None = None
+    # Per-scan AI credentials/endpoint (kept in memory only, never persisted or logged).
+    ai_api_key: str | None = None
+    ai_base_url: str | None = None
+    ai_model: str | None = None
 
 
 @dataclass
@@ -99,7 +103,12 @@ class ScanService:
         docs_dir = self._artifacts_dir / scan_id / "docs"
         started = time.monotonic()
         try:
-            provider = build_ai_provider(options.ai_provider)
+            provider = build_ai_provider(
+                options.ai_provider,
+                api_key=options.ai_api_key,
+                base_url=options.ai_base_url,
+                model=options.ai_model,
+            )
             pipeline = self._build_pipeline(provider)
             result = pipeline.run(
                 options.location,

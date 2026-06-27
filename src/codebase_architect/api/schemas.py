@@ -15,6 +15,10 @@ class ScanRequest(BaseModel):
     title: str | None = None
     static_only: bool = False
     ai_provider: str | None = None
+    # Optional per-scan AI overrides; never echoed back in any response.
+    ai_api_key: str | None = Field(default=None, description="API key for the selected provider")
+    ai_base_url: str | None = Field(default=None, description="Custom/local AI endpoint URL")
+    ai_model: str | None = None
 
 
 # -- Responses --------------------------------------------------------------
