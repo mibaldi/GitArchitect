@@ -66,6 +66,23 @@ expects. Three options, easiest first:
    to `git`. In the Docker image add `openssh-client` and mount the key, since
    the slim image ships `git` without an SSH client.
 
+## Functional specs & coverage
+
+The dashboard's **Functional specs** panel captures the *intended* behaviour via a
+guided wizard (product, actors, then functionalities with structured flow steps
+`actor > action > target` and `METHOD /path` endpoints). Specs are global and
+persisted. Pick **Coverage** on a spec and a finished scan to reconcile the two:
+each functionality is classified **implemented / partial / missing** by matching
+its keywords against the scanned entrypoints, modules and symbols, and anything
+in the code that no functionality describes is listed as a gap. Matching is
+heuristic and evidence-bearing (it shows which artifacts it matched). Reconciling
+links the scan to the spec.
+
+```bash
+# Reconcile a spec against a scan (after both exist):
+curl localhost:47800/specs/<spec_id>/reconcile/<scan_id>
+```
+
 ## AI providers
 
 The AI narrative pass is provider-agnostic and **grounded in the static facts**

@@ -196,6 +196,14 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .spec-review li { margin: 4px 0; }
 .link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: .8rem; padding: 0; }
 .danger-btn { background: none; border: none; color: #d23; cursor: pointer; font-size: .8rem; }
+.cov-summary { display: flex; gap: 14px; margin-bottom: 12px; font-size: .85rem; }
+.cov-row { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; }
+.cov-row .grow { flex: 1; }
+.cov-badge { font-size: .68rem; padding: 2px 8px; border-radius: 12px; white-space: nowrap; text-transform: uppercase; letter-spacing: .03em; }
+.cov-badge.implemented { background: rgba(31,157,85,.16); color: #1f9d55; }
+.cov-badge.partial { background: rgba(217,146,0,.16); color: #d99200; }
+.cov-badge.missing { background: rgba(210,51,51,.16); color: #d23; }
+.cov-ev { font-size: .74rem; color: var(--muted); margin-top: 2px; }
 
 .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -319,6 +327,17 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
         <button class="btn" id="wizSave" style="display:none">Save spec</button>
       </div>
     </div>
+    <div id="reconcileView" style="display:none">
+      <button class="link-btn" id="recBack">← Back to specs</button>
+      <h3 id="recTitle" style="margin:10px 0"></h3>
+      <div class="spec-field">Reconcile against scan</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="recScan" style="flex:1"></select>
+        <button class="btn" id="recRun">Coverage</button>
+      </div>
+      <div class="err" id="recErr"></div>
+      <div id="recResult" style="margin-top:14px"></div>
+    </div>
   </div>
 </aside>
 
@@ -374,8 +393,9 @@ function openSpec(open) {
 $("specBtn").onclick = () => openSpec(true);
 $("closeSpec").onclick = () => openSpec(false);
 
-function showSpecList() { $("specListView").style.display = ""; $("specWizard").style.display = "none"; }
-function showWizard() { $("specListView").style.display = "none"; $("specWizard").style.display = ""; }
+function showSpecList() { $("specListView").style.display = ""; $("specWizard").style.display = "none"; $("reconcileView").style.display = "none"; }
+function showWizard() { $("specListView").style.display = "none"; $("specWizard").style.display = ""; $("reconcileView").style.display = "none"; }
+function showReconcile() { $("specListView").style.display = "none"; $("specWizard").style.display = "none"; $("reconcileView").style.display = ""; }
 
 async function loadSpecList() {
   const list = $("specList");
@@ -386,8 +406,9 @@ async function loadSpecList() {
       const row = document.createElement("div");
       row.className = "spec-list-item";
       row.innerHTML = `<div class="meta"><b>${esc(s.product)}</b><span>${s.features} functionalit${s.features === 1 ? "y" : "ies"} · ${esc(s.updated_at || "")}</span></div>
-        <button class="link-btn" data-act="edit">Open</button><button class="danger-btn" data-act="del">Delete</button>`;
+        <button class="link-btn" data-act="cov">Coverage</button><button class="link-btn" data-act="edit">Open</button><button class="danger-btn" data-act="del">Delete</button>`;
       row.querySelector('[data-act="edit"]').onclick = () => editSpec(s.id);
+      row.querySelector('[data-act="cov"]').onclick = () => openReconcile(s.id, s.product);
       row.querySelector('[data-act="del"]').onclick = async () => { if (confirm("Delete this spec?")) { await api("/specs/" + s.id, { method: "DELETE" }); loadSpecList(); } };
       list.appendChild(row);
     });
@@ -480,6 +501,44 @@ $("wizSave").onclick = async () => {
     showSpecList(); loadSpecList();
   } catch (err) { $("specErr").textContent = err.message; }
 };
+
+/* reconciliation (coverage) */
+let recSpecId = null;
+async function openReconcile(id, product) {
+  recSpecId = id;
+  $("recTitle").textContent = product;
+  $("recErr").textContent = "";
+  $("recResult").innerHTML = "";
+  showReconcile();
+  try {
+    const scans = await api("/scans");
+    const done = [];
+    for (const s of scans) { if (s.status === "done") done.push(s); }
+    const sel = $("recScan");
+    sel.innerHTML = done.length ? done.map(s => `<option value="${s.id}">scan ${s.id.slice(5, 13)}</option>`).join("") : '<option value="">No finished scans</option>';
+  } catch (err) { $("recErr").textContent = err.message; }
+}
+$("recBack").onclick = () => { showSpecList(); loadSpecList(); };
+$("recRun").onclick = async () => {
+  const scanId = $("recScan").value;
+  if (!scanId) { $("recErr").textContent = "Run a scan first."; return; }
+  $("recErr").textContent = ""; $("recResult").innerHTML = "Computing…";
+  try {
+    const r = await api(`/specs/${recSpecId}/reconcile/${scanId}`);
+    $("recResult").innerHTML = renderCoverage(r);
+  } catch (err) { $("recResult").innerHTML = ""; $("recErr").textContent = err.message; }
+};
+function renderCoverage(r) {
+  const rows = r.coverage.map(c => {
+    const ev = c.matches.length ? '<div class="cov-ev">' + c.matches.map(m => esc(m.id)).join(", ") + "</div>" : "";
+    return `<div class="cov-row"><span class="cov-badge ${c.status}">${c.status}</span><div class="grow"><b>${esc(c.feature)}</b>${ev}</div></div>`;
+  }).join("");
+  const undoc = r.undocumented_entrypoints.length
+    ? `<div class="spec-field">In code but not in the spec (${r.undocumented_entrypoints.length})</div>` +
+      r.undocumented_entrypoints.map(e => `<div class="cov-ev">• ${esc(e)}</div>`).join("")
+    : "";
+  return `<div class="cov-summary"><span style="color:#1f9d55">✓ ${r.implemented} implemented</span><span style="color:#d99200">~ ${r.partial} partial</span><span style="color:#d23">✗ ${r.missing} missing</span></div>${rows}${undoc}`;
+}
 
 /* AI status chip on the scan card */
 function updateAIChip() {

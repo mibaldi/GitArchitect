@@ -12,6 +12,7 @@ from codebase_architect.domain.model.functional_spec import (
     FunctionalSpec,
     SpecFeature,
 )
+from codebase_architect.domain.model.reconciliation import ReconciliationReport
 from codebase_architect.shared.redaction import redact_url_credentials
 
 # -- Requests ---------------------------------------------------------------
@@ -321,4 +322,50 @@ def spec_summary(spec: FunctionalSpec) -> SpecSummaryResponse:
         product=spec.product,
         features=len(spec.features),
         updated_at=spec.updated_at,
+    )
+
+
+# -- Reconciliation (phase B2) ----------------------------------------------
+
+
+class ArtifactMatchSchema(BaseModel):
+    kind: str
+    id: str
+    score: int
+
+
+class FeatureCoverageSchema(BaseModel):
+    feature: str
+    status: str
+    matches: list[ArtifactMatchSchema]
+
+
+class ReconciliationResponse(BaseModel):
+    spec_id: str
+    scan_id: str
+    implemented: int
+    partial: int
+    missing: int
+    coverage: list[FeatureCoverageSchema]
+    undocumented_entrypoints: list[str]
+
+
+def reconciliation_to_response(report: ReconciliationReport) -> ReconciliationResponse:
+    return ReconciliationResponse(
+        spec_id=report.spec_id,
+        scan_id=report.scan_id,
+        implemented=report.implemented,
+        partial=report.partial,
+        missing=report.missing,
+        coverage=[
+            FeatureCoverageSchema(
+                feature=c.feature,
+                status=c.status.value,
+                matches=[
+                    ArtifactMatchSchema(kind=m.kind, id=m.id, score=m.score) for m in c.matches
+                ],
+            )
+            for c in report.coverage
+        ],
+        undocumented_entrypoints=list(report.undocumented_entrypoints),
     )

@@ -24,10 +24,12 @@ from codebase_architect.api.schemas import (
     DocumentationResponse,
     FunctionalSpecPayload,
     FunctionalSpecResponse,
+    ReconciliationResponse,
     ScanRef,
     ScanRequest,
     ScanStatusResponse,
     SpecSummaryResponse,
+    reconciliation_to_response,
     spec_payload_to_domain,
     spec_summary,
     spec_to_response,
@@ -43,6 +45,7 @@ from codebase_architect.application.services.scan_service import (
     ScanStatus,
 )
 from codebase_architect.application.services.spec_service import SpecService
+from codebase_architect.domain.services.reconcile import reconcile_spec
 from codebase_architect.infrastructure.export.zip_archive import zip_directory
 from codebase_architect.shared.errors import NotFoundError
 
@@ -304,3 +307,28 @@ def delete_spec(spec_id: str, service: SpecService = Depends(get_spec_service)) 
         service.delete(spec_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/specs/{spec_id}/reconcile/{scan_id}", response_model=ReconciliationResponse)
+def reconcile(
+    spec_id: str,
+    scan_id: str,
+    specs: SpecService = Depends(get_spec_service),
+    scans: ScanService = Depends(get_service),
+) -> ReconciliationResponse:
+    """Match a functional spec against a completed scan (coverage matrix)."""
+    try:
+        spec = specs.get(spec_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    job = _require_done(_job_or_404(scans, scan_id))
+    assert job.result is not None
+    report = reconcile_spec(
+        spec,
+        scan_id=scan_id,
+        entrypoints=job.result.entrypoints,
+        graph=job.result.module_graph,
+        model=job.result.code_model,
+    )
+    specs.link_scan(spec_id, scan_id)  # remember the spec was reconciled here
+    return reconciliation_to_response(report)

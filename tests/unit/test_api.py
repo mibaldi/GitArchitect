@@ -199,6 +199,29 @@ def test_spec_crud_and_persistence(tmp_path: Path) -> None:
     assert restarted.get(f"/specs/{spec_id}").status_code == 404
 
 
+def test_reconcile_spec_against_scan(client: TestClient, project: Path) -> None:
+    scan_id = _submit(client, project)
+    payload = _spec_payload()
+    payload["features"] = [
+        {
+            "name": "Greet users",
+            "systems": ["Greet"],
+            "endpoints": [{"method": "GET", "path": "/greet"}],
+        },
+        {"name": "Generate billing invoices"},
+    ]
+    spec_id = client.post("/specs", json=payload).json()["id"]
+
+    report = client.get(f"/specs/{spec_id}/reconcile/{scan_id}").json()
+    assert report["implemented"] + report["partial"] + report["missing"] == 2
+    statuses = {c["feature"]: c["status"] for c in report["coverage"]}
+    assert statuses["Greet users"] in ("implemented", "partial")
+    assert statuses["Generate billing invoices"] == "missing"
+
+    # The scan is now linked to the spec.
+    assert scan_id in client.get(f"/specs/{spec_id}").json()["linked_scan_ids"]
+
+
 def test_scans_persist_across_restart(tmp_path: Path, project: Path) -> None:
     settings = Settings(
         workspaces_dir=str(tmp_path / "ws"),
