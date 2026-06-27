@@ -341,9 +341,10 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
       <div class="spec-field">Project group — link the scans that make up this product</div>
       <p class="spec-hint">Scanned separately (frontend, backend, microservices). Linking lets the API flow match calls in one to endpoints in another.</p>
       <div id="recGroup"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn" id="recFlowBtn">Compute API flow</button>
         <button class="btn" id="recSeqBtn" style="background:var(--surface-2);color:var(--text)">Sequence diagrams</button>
+        <button class="btn" id="recDocBtn" style="background:var(--surface-2);color:var(--text)">Download document</button>
       </div>
       <div class="err" id="recFlowErr"></div>
       <div id="recFlow" style="margin-top:12px"></div>
@@ -425,7 +426,7 @@ async function loadSpecList() {
   } catch (err) { list.innerHTML = '<div class="err">' + esc(err.message) + "</div>"; }
 }
 
-function blankFeature() { return { name: "", actors: [], goal: "", preconditions: [], main_flow: [], alternative_flows: [], systems: [], endpoints: [], data_entities: [], acceptance_criteria: [] }; }
+function blankFeature() { return { name: "", actors: [], goal: "", preconditions: [], main_flow: [], alternative_flows: [], systems: [], endpoints: [], data_entities: [], acceptance_criteria: [], detail: "grounded" }; }
 $("newSpecBtn").onclick = () => { specState = { id: null, product: "", objective: "", actors: [], features: [blankFeature()] }; specStep = 0; showWizard(); renderWizard(); };
 
 async function editSpec(id) {
@@ -467,6 +468,11 @@ function renderWizard() {
 function featureCard(f, i) {
   return `<div class="feat-card" data-i="${i}">
     <div class="feat-head"><input data-f="name" value="${esc(f.name)}" placeholder="Functionality name"><button class="danger-btn" data-act="rmFeat" data-i="${i}">remove</button></div>
+    <div class="spec-field">Detail level</div>
+    <select data-f="detail">
+      <option value="grounded" ${f.detail !== "conceptual" ? "selected" : ""}>Grounded — tie to scanned code (✓/✗ endpoints)</option>
+      <option value="conceptual" ${f.detail === "conceptual" ? "selected" : ""}>Conceptual — abstract (frontend/backend, no concrete project)</option>
+    </select>
     <div class="spec-field">Actor(s) (one per line)</div><textarea data-f="actors">${esc(toText(f.actors))}</textarea>
     <div class="spec-field">Goal / value</div><textarea data-f="goal">${esc(f.goal)}</textarea>
     <div class="spec-field">Preconditions (one per line)</div><textarea data-f="preconditions">${esc(toText(f.preconditions))}</textarea>
@@ -492,7 +498,7 @@ function readStep() {
         preconditions: linesOf(g("preconditions")), main_flow: parseFlow(g("main_flow")),
         alternative_flows: linesOf(g("alternative_flows")), systems: linesOf(g("systems")),
         endpoints: parseEp(g("endpoints")), data_entities: linesOf(g("data_entities")),
-        acceptance_criteria: linesOf(g("acceptance_criteria")),
+        acceptance_criteria: linesOf(g("acceptance_criteria")), detail: g("detail"),
       };
     });
   }
@@ -571,6 +577,17 @@ function renderMermaidIn(el) {
   const nodes = el.querySelectorAll(".mermaid");
   try { if (nodes.length && window.mermaid) mermaid.run({ nodes }); } catch (_) {}
 }
+$("recDocBtn").onclick = async () => {
+  $("recFlowErr").textContent = "";
+  try {
+    const r = await fetch(`/specs/${recSpecId}/document`);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || ("HTTP " + r.status));
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "functional-doc.md"; a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) { $("recFlowErr").textContent = err.message; }
+};
 $("recSeqBtn").onclick = async () => {
   $("recFlowErr").textContent = ""; $("recFlow").innerHTML = "Building sequence diagrams…";
   try {
