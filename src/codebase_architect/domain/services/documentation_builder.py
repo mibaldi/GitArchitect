@@ -24,6 +24,7 @@ from codebase_architect.domain.model.finding import Finding
 from codebase_architect.domain.model.module import ModuleEdge, ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.services.architecture_rules import analyze_architecture
+from codebase_architect.domain.services.features_static import derive_static_features
 
 # Caps keep generated diagrams readable on large codebases.
 _MAX_GRAPH_NODES = 60
@@ -46,7 +47,7 @@ def build_documentation(
         _overview_page(title, generated_at, base_ref, model, narrative),
         _architecture_page(architecture, graph),
         _modules_page(graph),
-        _features_page(narrative),
+        _features_page(narrative, entrypoints),
         _entrypoints_page(entrypoints),
         _flows_page(entrypoints, graph, narrative),
         _dependencies_page(model),
@@ -96,30 +97,40 @@ def _overview_page(
     return DocPage(slug="README", title=title, sections=tuple(sections))
 
 
-def _features_page(narrative: NarrativeReport | None) -> DocPage:
-    if narrative is None:
-        body = (
-            "_AI narrative was not run (static-only scan). Re-run without "
-            "`--static-only` and with an AI provider configured to generate the "
-            "functionality catalog._"
+def _features_page(
+    narrative: NarrativeReport | None, entrypoints: list[Entrypoint]
+) -> DocPage:
+    # Prefer the AI catalog; fall back to a deterministic one derived from
+    # entrypoints so the page is never empty on a static-only scan.
+    ai_features = list(narrative.features) if narrative else []
+    features = ai_features or derive_static_features(entrypoints)
+
+    sections: list[DocSection] = []
+    if not ai_features and features:
+        sections.append(
+            DocSection(
+                body=(
+                    "_Derived statically from entrypoints. Run with an AI provider "
+                    "(without `--static-only`) to enrich these descriptions._"
+                )
+            )
         )
-    elif not narrative.features:
-        body = "_No features were derived._"
+
+    if not features:
+        body = "_No functionalities were derived (no entrypoints detected)._"
     else:
         chunks: list[str] = []
-        for feature in narrative.features:
-            chunks.append(f"### {feature.name}")
+        for feature in features:
+            badge = "" if feature.source.value == "ai" else " _(static)_"
+            chunks.append(f"### {feature.name}{badge}")
             chunks.append(feature.description)
             if feature.related:
                 refs = ", ".join(f"`{r}`" for r in feature.related)
                 chunks.append(f"_Related: {refs}_")
             chunks.append("")
         body = "\n".join(chunks).strip()
-    return DocPage(
-        slug="features",
-        title="Functionalities",
-        sections=(DocSection(heading="Features", body=body),),
-    )
+    sections.append(DocSection(heading="Features", body=body))
+    return DocPage(slug="features", title="Functionalities", sections=tuple(sections))
 
 
 def _architecture_page(architecture: Architecture, graph: ModuleGraph) -> DocPage:
