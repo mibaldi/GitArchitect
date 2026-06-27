@@ -1,91 +1,108 @@
 # Deploying Codebase Architect on the VPS
 
-How Codebase Architect fits onto a shared VPS that already runs other
-services, so the setup stays **stable** (survives reboots) and
-**understandable** (one source of truth, no ad-hoc commands).
+Access model: **everything over the tailnet by `IP:port`.** Tailscale is the
+only door into the VPS — no service is published to the public internet, and
+there is no reverse proxy or `tailscale serve` in the path. Each service binds
+to the host's Tailscale IP and is reached at `http://<tailscale-ip>:<port>/`.
 
-## Two network planes
+This is the simplest model to keep **stable** (survives reboots, no proxy to
+break) and **understandable** (one port map, one rule).
 
-The VPS has two ways in. Keep them separate and pick *one* per service.
-
-| Plane | Address | Ingress | Use for |
-|-------|---------|---------|---------|
-| Internet | `eth0` public IP | **Traefik** on `:80`/`:443` by hostname | only what must be public |
-| Tailnet | Tailscale IP (`100.x.y.z`) | **Tailscale Serve** (HTTPS on 443/8443/10000) or direct `IP:port` | everything private |
-
-They coexist because Tailscale intercepts tailnet traffic in userspace
-*before* it reaches Traefik's `0.0.0.0:443`. So a `tailscale serve` rule
-shadows Traefik **only for the tailnet**, never for the public plane.
-
-## Bind addresses — the rule that keeps it sane
+## The one rule: bind address decides exposure
 
 A container's host bind decides who can reach it:
 
-- `127.0.0.1:PORT` → host-only. Reachable on the tailnet **only** via a
-  `tailscale serve` rule that proxies to it. *Default and safest.*
-- `100.x.y.z:PORT` (Tailscale IP) → reachable directly at `IP:PORT` from any
-  tailnet device, no Serve needed.
-- `0.0.0.0:PORT` → **exposed to the public internet.** Use only deliberately.
+- `100.x.y.z:PORT` (the **Tailscale IP**) → reachable at `IP:PORT` from any
+  device on the tailnet, and from nowhere else. **This is what we want.**
+- `127.0.0.1:PORT` → host-only; not reachable from other tailnet devices.
+- `0.0.0.0:PORT` → **exposed to the public internet.** Never use it here.
 
-Codebase Architect defaults to `127.0.0.1:47800` (see `docker-compose.yml`,
-`BIND_ADDR`/`HOST_PORT`). Leave it host-only and publish it with Serve.
+Find this host's Tailscale IP with `tailscale ip -4` (e.g. `100.83.238.95`).
 
-## Service / port map (fill in for your host)
+## Service / port map
 
-Keep this table current — it is the human-readable index of the box.
+The human-readable index of the box. Keep it current.
 
-| Service | Container | Host bind | Reached as |
-|---------|-----------|-----------|------------|
-| Codebase Architect | `gitarchitect-api-1` | `127.0.0.1:47800` | `https://<name>.ts.net:8443/` (Serve) |
-| hermes (root) | _your hermes container_ | `…:8000` | `https://<name>.ts.net/` (Serve, root) |
-| Traefik | `*-traefik-1` | `0.0.0.0:80,443` | public ingress by hostname |
-| _add the rest…_ | | | |
+| Service | Container | Host bind | URL |
+|---------|-----------|-----------|-----|
+| Codebase Architect | `gitarchitect-api-1` | `100.83.238.95:47800` | `http://100.83.238.95:47800/` |
+| hermes | _memory-api_ | `100.83.238.95:8000` | `http://100.83.238.95:8000/` |
+| engram MCP | _memory-mcp_ | `100.83.238.95:8765` | `http://100.83.238.95:8765/` |
+| n8n | `n8n-n8n-1` | `100.83.238.95:5678` | `http://100.83.238.95:5678/` |
+| vikunja | `vikunja-1` | `100.83.238.95:32777` | `http://100.83.238.95:32777/` |
+| mibaldiutils | `mibaldiutils-web-1` | `100.83.238.95:8088` | `http://100.83.238.95:8088/` |
+| postgres (engram) | `*-postgres-1` | `100.83.238.95:5432` | internal/tailnet only |
 
-## Tailnet routing is in version control
+> Anything still bound to `0.0.0.0` (e.g. vikunja `0.0.0.0:32777`, Traefik
+> `0.0.0.0:80/443`) is public — repoint it to the Tailscale IP or remove it.
 
-`tailscale serve` rules persist across reboots but live in tailscaled state,
-not git. To make them reproducible, the desired state is encoded in
-[`scripts/tailnet-serve.sh`](../scripts/tailnet-serve.sh). Edit the backends at
-the top, then:
+## Putting a service on the Tailscale IP
+
+For each service's compose file, change the published address from
+`127.0.0.1`/`0.0.0.0` to the Tailscale IP:
+
+```yaml
+ports:
+  - "100.83.238.95:5678:5678"   # was 127.0.0.1:5678 or 0.0.0.0:5678
+```
+
+then `docker compose up -d` that stack. For **Codebase Architect** this is a
+one-liner via `.env` (no compose edit needed):
 
 ```bash
-sudo ./scripts/tailnet-serve.sh        # idempotent: reset + reapply
-tailscale serve status                 # verify
+cd GitArchitect
+echo 'BIND_ADDR=100.83.238.95' >> .env
+docker compose up -d
+# -> http://100.83.238.95:47800/
 ```
 
-Target state:
+## Turn off Tailscale Serve (not used in this model)
 
-```
-https://<name>.ts.net          ->  hermes        (root, no port)
-https://<name>.ts.net:8443     ->  Codebase Architect
+If a previous setup added `tailscale serve` rules, clear them so routing isn't
+ambiguous — everything is plain `IP:port` now:
+
+```bash
+tailscale serve reset
+tailscale serve status        # should print nothing
 ```
 
-If the root shows a 502, the hermes backend isn't listening on the address in
-the rule. Check where it actually binds (`ss -tlnp | grep :8000`) and point the
-script at that (e.g. the Tailscale IP instead of `127.0.0.1`).
+## Lock the public edge
+
+Tailscale is the only intended door, so drop public inbound at the firewall and
+keep just what Tailscale needs (plus SSH if you don't use Tailscale SSH):
+
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 41641/udp      # Tailscale
+sudo ufw allow 22/tcp         # SSH (omit if you use `tailscale ssh`)
+sudo ufw enable
+```
+
+With every service bound to `100.x.y.z`, nothing answers on the public IP even
+without ufw — but the firewall makes it explicit and catches mistakes.
 
 ## Architect lifecycle
 
 ```bash
 cd GitArchitect
-git pull origin master                 # get the latest
+git pull origin master                 # latest
 docker compose up -d --build           # (re)build and run, detached
 docker compose logs -f api             # tail logs
 docker compose down                    # stop
 ```
 
-`restart: unless-stopped` is already set, so the container comes back after a
-reboot. To scan a local project, mount it read-only (see the commented volume
-in `docker-compose.yml`) and use its in-container path as the scan source.
+`restart: unless-stopped` is set, so it comes back after a reboot. To scan a
+local project, mount it read-only (see the commented volume in
+`docker-compose.yml`) and use its in-container path as the scan source.
 
 ## Reboot checklist
 
-After `sudo reboot`, confirm the box came back clean:
-
 ```bash
-docker ps                              # every expected container Up
-tailscale serve status                 # both rules present (root + :8443)
-curl -I http://127.0.0.1:47800/health  # architect healthy
+docker ps                                      # every container Up, bound to 100.x.y.z
+tailscale ip -4                                # host still on the tailnet
+curl -I http://100.83.238.95:47800/health      # architect healthy
 ```
 
-If a `tailscale serve` rule is missing, just re-run `scripts/tailnet-serve.sh`.
+`scripts/tailnet-access.sh` prints the Tailscale IP and the same port map for a
+quick "what's where" at any time.
