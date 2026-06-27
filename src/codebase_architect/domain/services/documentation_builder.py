@@ -26,6 +26,7 @@ from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.services.architecture_rules import analyze_architecture
 from codebase_architect.domain.services.call_graph import build_call_edges
 from codebase_architect.domain.services.features_static import derive_static_features
+from codebase_architect.domain.services.http_flows import collect_http
 
 # Caps keep generated diagrams readable on large codebases.
 _MAX_GRAPH_NODES = 60
@@ -53,6 +54,7 @@ def build_documentation(
         _features_page(narrative, entrypoints),
         _entrypoints_page(entrypoints),
         _flows_page(entrypoints, graph, model, narrative),
+        _api_page(model),
         _dependencies_page(model),
         _security_page(findings),
     )
@@ -296,6 +298,24 @@ def _flow_subgraph(start: str, adjacency: dict[str, list[str]]) -> list[tuple[st
     return sorted(
         {(s, t) for s in visited for t in adjacency.get(s, []) if t in visited}
     )
+
+
+def _api_page(model: CodeModel) -> DocPage:
+    routes, calls = collect_http(model)
+    sections: list[DocSection] = []
+
+    route_rows = [f"| `{r.method}` | `{r.path}` | `{r.module}` | {r.handler} |" for r in routes]
+    routes_body = _table(["Method", "Path", "Module", "Handler"], route_rows) or (
+        "_No exposed HTTP endpoints detected (Spring / FastAPI supported)._"
+    )
+    sections.append(DocSection(heading="Exposed endpoints", body=routes_body))
+
+    call_rows = [f"| `{c.method}` | `{c.path}` | `{c.module}` |" for c in calls]
+    calls_body = _table(["Method", "Path", "From module"], call_rows) or (
+        "_No outbound HTTP calls detected (Angular HttpClient / fetch / axios supported)._"
+    )
+    sections.append(DocSection(heading="Outbound calls", body=calls_body))
+    return DocPage(slug="api", title="API surface", sections=tuple(sections))
 
 
 def _dependencies_page(model: CodeModel) -> DocPage:

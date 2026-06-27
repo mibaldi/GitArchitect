@@ -72,6 +72,7 @@ def test_build_documentation_has_expected_pages() -> None:
         "features",
         "entrypoints",
         "flows",
+        "api",
         "dependencies",
         "security",
     } == slugs
