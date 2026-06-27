@@ -115,10 +115,39 @@ configured provider, scans run static-only.
 | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Gemini | `gemini` | `GOOGLE_API_KEY` (`CA_GEMINI_MODEL`) |
 | Local (Ollama, …) | `local` | none (`CA_LOCAL_ENDPOINT`, `CA_LOCAL_MODEL`) |
+| Remote CLI runner | `cli_runner` | none — uses a logged-in `claude`/`codex` CLI |
 
 Narratives are cached (keyed by the analysis facts + provider), so re-scanning
 an unchanged codebase reuses the result and spends 0 tokens. Bypass with
 `--no-ai-cache` or `CA_AI__CACHE_ENABLED=false`.
+
+### Remote CLI runner (no API key, no local model)
+
+Reuse an **already-authenticated** Claude or Codex CLI on another machine — e.g.
+a Mac on your tailnet — instead of a provider API key. GitArchitect POSTs the
+(grounded) prompt to a small runner that runs the CLI and returns its text. It
+performs HTTP only; it never runs a local command.
+
+```
+GitArchitect ──HTTP──▶ CLI runner (Mac) ──▶ claude/codex CLI
+```
+
+1. On the Mac, start the runner (see [`tools/cli_runner/README.md`](../tools/cli_runner/README.md)):
+   ```bash
+   export CLI_RUNNER_ALLOWED_DIRS="$HOME/dev"
+   export CLI_RUNNER_SHARED_SECRET="…"
+   uvicorn cli_runner.main:app --host 0.0.0.0 --port 8787
+   ```
+2. Point GitArchitect at it (the Mac's Tailscale IP from `tailscale ip -4`):
+   ```bash
+   export CA_CLI_RUNNER__BASE_URL=http://100.83.238.95:8787
+   export CA_CLI_RUNNER__AGENT=claude        # or codex
+   export CA_CLI_RUNNER__SHARED_SECRET=…      # same secret
+   architect scan <source> --out ./docs --ai-provider cli_runner
+   ```
+
+If the runner is unreachable or the agent fails, the scan degrades to static
+docs with a clear error in the logs (credentials/URLs are redacted).
 
 ## Web dashboard + REST API
 

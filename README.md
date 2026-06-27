@@ -39,8 +39,11 @@ everything ships in one container.
 ### AI providers & plugins
 
 The AI narrative pass is provider-agnostic. Built-in providers: `claude`,
-`openai`, `openrouter`, `gemini`, `local` (any OpenAI-compatible server). Select
-with `--ai-provider` or `CA_AI__DEFAULT_PROVIDER`; install the matching extra
+`openai`, `openrouter`, `gemini`, `local` (any OpenAI-compatible server) and
+`cli_runner` (a logged-in Claude/Codex CLI on another machine — no API key, no
+local model; see [`tools/cli_runner`](tools/cli_runner/README.md) and the
+"Remote CLI runner" section in [`docs/USAGE.md`](docs/USAGE.md)). Select with
+`--ai-provider` or `CA_AI__DEFAULT_PROVIDER`; install the matching extra
 (`ai`, `ai-openai`, `ai-gemini`).
 
 Every scan also runs a **secret scan** (redacted findings on the `security`

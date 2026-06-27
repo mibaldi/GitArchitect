@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd agent for the GitArchitect CLI runner (macOS).
+     Edit the paths, ALLOWED_DIRS and SHARED_SECRET, then:
+       cp com.gitarchitect.cli-runner.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.gitarchitect.cli-runner.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gitarchitect.cli-runner</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/me/dev/GitArchitect/tools/cli_runner/.venv/bin/uvicorn</string>
+    <string>cli_runner.main:app</string>
+    <string>--host</string><string>0.0.0.0</string>
+    <string>--port</string><string>8787</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/me/dev/GitArchitect/tools</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CLI_RUNNER_ALLOWED_DIRS</key>
+    <string>/Users/me/dev,/Users/me/projects</string>
+    <key>CLI_RUNNER_SHARED_SECRET</key>
+    <string>change-me</string>
+    <key>CLI_RUNNER_DEFAULT_TIMEOUT_SECONDS</key>
+    <string>600</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/gitarchitect-cli-runner.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/gitarchitect-cli-runner.err</string>
+</dict>
+</plist>
