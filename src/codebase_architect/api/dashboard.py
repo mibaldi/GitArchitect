@@ -175,6 +175,28 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .panel .hint { margin-top: 16px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; font-size: .82rem; color: var(--muted); }
 .saved { color: var(--ok); font-size: .82rem; margin-top: 8px; min-height: 1.1em; }
 
+/* functional spec wizard */
+.panel.wide { width: 760px; }
+.spec-list-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
+.spec-list-item .meta { flex: 1; }
+.spec-list-item .meta b { display: block; font-size: .9rem; }
+.spec-list-item .meta span { font-size: .76rem; color: var(--muted); }
+.wiz-steps { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.wiz-steps .step { font-size: .76rem; padding: 5px 10px; border-radius: 20px; border: 1px solid var(--line); color: var(--muted); }
+.wiz-steps .step.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wiz-steps .step.done { border-color: var(--accent); color: var(--accent); }
+.wiz-nav { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+.feat-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; background: var(--surface-2); }
+.feat-card .feat-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.feat-card .feat-head input { flex: 1; }
+.spec-field { margin: 10px 0 2px; font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.spec-hint { font-size: .72rem; color: var(--muted); margin: 0 0 4px; }
+#wizBody textarea { width: 100%; min-height: 56px; resize: vertical; font-family: inherit; font-size: .84rem; }
+.spec-review { font-size: .84rem; }
+.spec-review li { margin: 4px 0; }
+.link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: .8rem; padding: 0; }
+.danger-btn { background: none; border: none; color: #d23; cursor: pointer; font-size: .8rem; }
+
 .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin .7s linear infinite; vertical-align: -3px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -193,6 +215,11 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
   </div>
   <div class="tools">
     <button class="icon-btn" id="themeBtn" title="Toggle theme">◐</button>
+    <button class="icon-btn" id="specBtn" title="Functional specs">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="settingsBtn" title="Settings">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -269,6 +296,32 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
   </div>
 </aside>
 
+<aside class="panel wide" id="specPanel">
+  <header>
+    <h2>Functional specs</h2>
+    <button class="icon-btn" id="closeSpec">✕</button>
+  </header>
+  <div class="body">
+    <div id="specListView">
+      <button class="btn" id="newSpecBtn">+ New functional spec</button>
+      <div id="specList" style="margin-top:14px"></div>
+      <div class="hint">A spec is the <b>theory</b> (functionalities, actors, flows). It is global — link it to one or more scans, then reconcile it against the scanned code to produce flow diagrams and a coverage report.</div>
+    </div>
+    <div id="specWizard" style="display:none">
+      <div class="wiz-steps" id="wizSteps"></div>
+      <div id="wizBody"></div>
+      <div class="err" id="specErr"></div>
+      <div class="wiz-nav">
+        <button class="link-btn" id="wizCancel">Cancel</button>
+        <span style="flex:1"></span>
+        <button class="icon-btn" id="wizPrev">Back</button>
+        <button class="icon-btn" id="wizNext">Next</button>
+        <button class="btn" id="wizSave" style="display:none">Save spec</button>
+      </div>
+    </div>
+  </div>
+</aside>
+
 <script>
 const $ = id => document.getElementById(id);
 const LS = k => localStorage.getItem("ca." + k) || "";
@@ -278,7 +331,7 @@ let current = null, currentSlug = null, timer = null;
 /* theme */
 function applyTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
-  mermaid.initialize({ startOnLoad: false, theme: "neutral" });
+  try { if (window.mermaid) mermaid.initialize({ startOnLoad: false, theme: "neutral" }); } catch (_) {}
 }
 applyTheme(LS("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
 $("themeBtn").onclick = () => {
@@ -294,13 +347,138 @@ function openSettings(open) {
 }
 $("settingsBtn").onclick = () => openSettings(true);
 $("closeSettings").onclick = () => openSettings(false);
-$("overlay").onclick = () => openSettings(false);
+$("overlay").onclick = () => { openSettings(false); openSpec(false); };
 ["provider", "apiKey", "baseUrl", "model"].forEach(id => { $(id).value = LS(id); });
 $("settingsForm").onsubmit = e => {
   e.preventDefault();
   ["provider", "apiKey", "baseUrl", "model"].forEach(id => SET(id, $(id).value.trim()));
   $("savedMsg").textContent = "✓ Saved";
   updateAIChip();
+};
+
+/* functional spec wizard */
+const SPEC_STEPS = ["Product & actors", "Functionalities", "Review"];
+let specState = null, specStep = 0;
+const linesOf = v => v.split("\n").map(s => s.trim()).filter(Boolean);
+const toText = a => (a || []).join("\n");
+const flowToText = f => (f || []).map(s => [s.actor, s.action, s.target].join(" > ")).join("\n");
+const parseFlow = v => linesOf(v).map(l => { const p = l.split(">").map(s => s.trim()); return { actor: p[0] || "", action: p[1] || "", target: p[2] || "" }; });
+const epToText = e => (e || []).map(x => (x.method + " " + x.path).trim()).join("\n");
+const parseEp = v => linesOf(v).map(l => { const i = l.indexOf(" "); return i < 0 ? { method: "", path: l } : { method: l.slice(0, i).trim(), path: l.slice(i + 1).trim() }; });
+
+function openSpec(open) {
+  $("specPanel").classList.toggle("show", open);
+  $("overlay").classList.toggle("show", open);
+  if (open) { showSpecList(); loadSpecList(); }
+}
+$("specBtn").onclick = () => openSpec(true);
+$("closeSpec").onclick = () => openSpec(false);
+
+function showSpecList() { $("specListView").style.display = ""; $("specWizard").style.display = "none"; }
+function showWizard() { $("specListView").style.display = "none"; $("specWizard").style.display = ""; }
+
+async function loadSpecList() {
+  const list = $("specList");
+  try {
+    const specs = await api("/specs");
+    list.innerHTML = specs.length ? "" : '<div style="color:var(--muted);font-size:.84rem">No specs yet.</div>';
+    specs.forEach(s => {
+      const row = document.createElement("div");
+      row.className = "spec-list-item";
+      row.innerHTML = `<div class="meta"><b>${esc(s.product)}</b><span>${s.features} functionalit${s.features === 1 ? "y" : "ies"} · ${esc(s.updated_at || "")}</span></div>
+        <button class="link-btn" data-act="edit">Open</button><button class="danger-btn" data-act="del">Delete</button>`;
+      row.querySelector('[data-act="edit"]').onclick = () => editSpec(s.id);
+      row.querySelector('[data-act="del"]').onclick = async () => { if (confirm("Delete this spec?")) { await api("/specs/" + s.id, { method: "DELETE" }); loadSpecList(); } };
+      list.appendChild(row);
+    });
+  } catch (err) { list.innerHTML = '<div class="err">' + esc(err.message) + "</div>"; }
+}
+
+function blankFeature() { return { name: "", actors: [], goal: "", preconditions: [], main_flow: [], alternative_flows: [], systems: [], endpoints: [], data_entities: [], acceptance_criteria: [] }; }
+$("newSpecBtn").onclick = () => { specState = { id: null, product: "", objective: "", actors: [], features: [blankFeature()] }; specStep = 0; showWizard(); renderWizard(); };
+
+async function editSpec(id) {
+  const s = await api("/specs/" + id);
+  specState = { id: s.id, product: s.product, objective: s.objective, actors: s.actors || [], features: (s.features.length ? s.features : [blankFeature()]) };
+  specStep = 0; showWizard(); renderWizard();
+}
+
+function renderWizard() {
+  $("specErr").textContent = "";
+  $("wizSteps").innerHTML = SPEC_STEPS.map((t, i) => `<span class="step ${i === specStep ? "active" : (i < specStep ? "done" : "")}">${i + 1}. ${t}</span>`).join("");
+  const body = $("wizBody");
+  if (specStep === 0) {
+    body.innerHTML = `
+      <div class="spec-field">Product / system</div>
+      <input id="sp_product" value="${esc(specState.product)}" placeholder="Orders platform">
+      <div class="spec-field">Objective</div>
+      <textarea id="sp_objective" placeholder="What the system is for, in 1–2 sentences">${esc(specState.objective)}</textarea>
+      <div class="spec-field">Actors (one per line)</div>
+      <p class="spec-hint">Who uses it: end user, admin, external system, scheduler…</p>
+      <textarea id="sp_actors" placeholder="User\nAdmin">${esc(toText(specState.actors))}</textarea>`;
+  } else if (specStep === 1) {
+    body.innerHTML = specState.features.map((f, i) => featureCard(f, i)).join("") +
+      `<button class="link-btn" id="addFeat">+ Add functionality</button>`;
+    $("addFeat").onclick = () => { readStep(); specState.features.push(blankFeature()); renderWizard(); };
+    body.querySelectorAll('[data-act="rmFeat"]').forEach(b => b.onclick = () => { readStep(); specState.features.splice(+b.dataset.i, 1); if (!specState.features.length) specState.features.push(blankFeature()); renderWizard(); });
+  } else {
+    const f = specState.features.filter(x => x.name);
+    body.innerHTML = `<div class="spec-review"><p><b>${esc(specState.product || "(no product)")}</b> — ${esc(specState.objective || "")}</p>
+      <p>Actors: ${(specState.actors.length ? specState.actors.map(esc).join(", ") : "—")}</p>
+      <p>${f.length} functionalit${f.length === 1 ? "y" : "ies"}:</p><ul>${f.map(x => `<li><b>${esc(x.name)}</b> — ${x.main_flow.length} flow step(s), ${x.endpoints.length} endpoint(s)</li>`).join("")}</ul>
+      <p class="spec-hint">Saving stores the spec on the server. Reconciling it against a scan (coverage + flow diagrams) comes next.</p></div>`;
+  }
+  $("wizPrev").style.display = specStep === 0 ? "none" : "";
+  $("wizNext").style.display = specStep === SPEC_STEPS.length - 1 ? "none" : "";
+  $("wizSave").style.display = specStep === SPEC_STEPS.length - 1 ? "" : "none";
+}
+
+function featureCard(f, i) {
+  return `<div class="feat-card" data-i="${i}">
+    <div class="feat-head"><input data-f="name" value="${esc(f.name)}" placeholder="Functionality name"><button class="danger-btn" data-act="rmFeat" data-i="${i}">remove</button></div>
+    <div class="spec-field">Actor(s) (one per line)</div><textarea data-f="actors">${esc(toText(f.actors))}</textarea>
+    <div class="spec-field">Goal / value</div><textarea data-f="goal">${esc(f.goal)}</textarea>
+    <div class="spec-field">Preconditions (one per line)</div><textarea data-f="preconditions">${esc(toText(f.preconditions))}</textarea>
+    <div class="spec-field">Main flow — one step per line: <code>actor &gt; action &gt; target</code></div><textarea data-f="main_flow" placeholder="User > opens checkout > Frontend\nFrontend > POST /orders > Orders API\nOrders API > GET /stock > Inventory svc">${esc(flowToText(f.main_flow))}</textarea>
+    <div class="spec-field">Alternative / error flows (one per line)</div><textarea data-f="alternative_flows">${esc(toText(f.alternative_flows))}</textarea>
+    <div class="spec-field">Systems / services involved (one per line)</div><textarea data-f="systems">${esc(toText(f.systems))}</textarea>
+    <div class="spec-field">Endpoints — one per line: <code>METHOD /path</code></div><textarea data-f="endpoints" placeholder="POST /orders\nGET /stock">${esc(epToText(f.endpoints))}</textarea>
+    <div class="spec-field">Data / entities (one per line)</div><textarea data-f="data_entities">${esc(toText(f.data_entities))}</textarea>
+    <div class="spec-field">Acceptance criteria (one per line)</div><textarea data-f="acceptance_criteria">${esc(toText(f.acceptance_criteria))}</textarea>
+  </div>`;
+}
+
+function readStep() {
+  if (specStep === 0) {
+    specState.product = $("sp_product").value.trim();
+    specState.objective = $("sp_objective").value.trim();
+    specState.actors = linesOf($("sp_actors").value);
+  } else if (specStep === 1) {
+    specState.features = [...document.querySelectorAll(".feat-card")].map(card => {
+      const g = s => card.querySelector(`[data-f="${s}"]`).value;
+      return {
+        name: g("name").trim(), actors: linesOf(g("actors")), goal: g("goal").trim(),
+        preconditions: linesOf(g("preconditions")), main_flow: parseFlow(g("main_flow")),
+        alternative_flows: linesOf(g("alternative_flows")), systems: linesOf(g("systems")),
+        endpoints: parseEp(g("endpoints")), data_entities: linesOf(g("data_entities")),
+        acceptance_criteria: linesOf(g("acceptance_criteria")),
+      };
+    });
+  }
+}
+
+$("wizPrev").onclick = () => { readStep(); specStep = Math.max(0, specStep - 1); renderWizard(); };
+$("wizNext").onclick = () => { readStep(); if (specStep === 0 && !specState.product) { $("specErr").textContent = "Product name is required."; return; } specStep = Math.min(SPEC_STEPS.length - 1, specStep + 1); renderWizard(); };
+$("wizCancel").onclick = () => showSpecList();
+$("wizSave").onclick = async () => {
+  readStep();
+  const payload = { product: specState.product, objective: specState.objective, actors: specState.actors, features: specState.features.filter(f => f.name), linked_scan_ids: [] };
+  if (!payload.product) { $("specErr").textContent = "Product name is required."; return; }
+  try {
+    if (specState.id) await api("/specs/" + specState.id, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    else await api("/specs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    showSpecList(); loadSpecList();
+  } catch (err) { $("specErr").textContent = err.message; }
 };
 
 /* AI status chip on the scan card */
@@ -425,13 +603,13 @@ async function loadPage(slug) {
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.slug === slug));
   const page = await api(`/scans/${current}/pages/${slug}`);
   const el = $("content");
-  el.innerHTML = marked.parse(page.markdown);
+  el.innerHTML = window.marked ? marked.parse(page.markdown) : ("<pre>" + esc(page.markdown) + "</pre>");
   el.querySelectorAll("code.language-mermaid").forEach(c => {
     const div = document.createElement("div"); div.className = "mermaid"; div.textContent = c.textContent;
     c.closest("pre").replaceWith(div);
   });
   const nodes = el.querySelectorAll(".mermaid");
-  if (nodes.length) mermaid.run({ nodes });
+  try { if (nodes.length && window.mermaid) mermaid.run({ nodes }); } catch (_) {}
 }
 
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
