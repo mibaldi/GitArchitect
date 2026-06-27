@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, HTMLResponse
 
 from codebase_architect.api.dashboard import INDEX_HTML
@@ -82,6 +92,86 @@ def create_scan(
     )
     background.add_task(service.execute, job.id)
     return ScanRef(id=job.id, status=job.status)
+
+
+# Archive uploads are streamed to a temp file, scanned, then deleted — nothing
+# is persisted. Cap the size and accept only the archive types we support.
+_UPLOAD_SUFFIXES = (".zip", ".tar.gz", ".tgz", ".tar")
+_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+_UPLOAD_CHUNK = 1024 * 1024
+
+
+@router.post("/scans/upload", status_code=202, response_model=ScanRef)
+async def create_scan_upload(
+    background: BackgroundTasks,
+    file: UploadFile = File(..., description="A .zip or .tar.gz archive of the codebase"),
+    title: str | None = Form(default=None),
+    static_only: bool = Form(default=False),
+    ai_provider: str | None = Form(default=None),
+    ai_api_key: str | None = Form(default=None),
+    ai_base_url: str | None = Form(default=None),
+    ai_model: str | None = Form(default=None),
+    service: ScanService = Depends(get_service),
+) -> ScanRef:
+    """Upload an archive, scan it, and discard the upload afterwards."""
+    filename = file.filename or "upload"
+    suffix = _archive_suffix(filename)
+    if suffix is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported upload type; expected one of {', '.join(_UPLOAD_SUFFIXES)}.",
+        )
+
+    temp_path = await _save_upload(file, suffix)
+    job = service.submit(
+        ScanOptions(
+            location=str(temp_path),
+            title=title or _strip_suffix(filename, suffix),
+            static_only=static_only,
+            ai_provider=ai_provider,
+            ai_api_key=ai_api_key,
+            ai_base_url=ai_base_url,
+            ai_model=ai_model,
+        )
+    )
+    background.add_task(_run_and_cleanup, service, job.id, temp_path)
+    return ScanRef(id=job.id, status=job.status)
+
+
+def _archive_suffix(filename: str) -> str | None:
+    lowered = filename.lower()
+    for suffix in _UPLOAD_SUFFIXES:
+        if lowered.endswith(suffix):
+            return suffix
+    return None
+
+
+def _strip_suffix(filename: str, suffix: str) -> str:
+    return Path(filename[: -len(suffix)]).name or "Uploaded archive"
+
+
+async def _save_upload(file: UploadFile, suffix: str) -> Path:
+    fd, temp_name = tempfile.mkstemp(suffix=suffix, prefix="ca-upload-")
+    temp_path = Path(temp_name)
+    written = 0
+    try:
+        with open(fd, "wb") as out:
+            while chunk := await file.read(_UPLOAD_CHUNK):
+                written += len(chunk)
+                if written > _MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="Upload exceeds the size limit.")
+                out.write(chunk)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    return temp_path
+
+
+def _run_and_cleanup(service: ScanService, scan_id: str, temp_path: Path) -> None:
+    try:
+        service.execute(scan_id)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @router.get("/scans", response_model=list[ScanRef])
