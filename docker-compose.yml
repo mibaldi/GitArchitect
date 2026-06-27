@@ -1,13 +1,12 @@
 # Run the Codebase Architect web dashboard + REST API:
 #   docker compose up --build -d
 #
-# By default the app binds to 127.0.0.1:47800 (host-only, non-standard port,
-# not publicly exposed). Two ways to reach it from your tailnet:
-#   1. Tailscale Serve (HTTPS, recommended):  tailscale serve --bg 47800
-#      then open the https://<host>.<tailnet>.ts.net URL it prints.
-#   2. Bind directly to your Tailscale IP:    set BIND_ADDR to it, e.g.
-#      echo 'BIND_ADDR=100.83.238.95' >> .env && docker compose up -d
-#      then open http://<tailscale-ip>:47800/
+# Access model (see docs/DEPLOY.md): everything over the tailnet by IP:port.
+# Bind the app to this host's Tailscale IP so it is reachable from any tailnet
+# device — and nowhere else:
+#   echo 'BIND_ADDR=100.83.238.95' >> .env && docker compose up -d
+#   then open http://<tailscale-ip>:47800/
+# Default bind is 127.0.0.1 (host-only). Never use 0.0.0.0 (that is public).
 #
 # To scan a local project, mount it (see the commented volume) and use its
 # in-container path as the scan "Source".
@@ -16,7 +15,8 @@ services:
     build: .
     image: codebase-architect
     ports:
-      # Host bind = BIND_ADDR:HOST_PORT -> container 47800. Defaults to
+      # Host bind = BIND_ADDR:HOST_PORT -> container 47800. Set BIND_ADDR to the
+      # Tailscale IP for tailnet IP:port access. Defaults to
       # 127.0.0.1:47800 (host-only). To reach it "without a port" on your
       # tailnet alongside other services, e.g. BIND_ADDR=<tailscale-ip>
       # HOST_PORT=80. Tailscale Serve also works with the default bind.
