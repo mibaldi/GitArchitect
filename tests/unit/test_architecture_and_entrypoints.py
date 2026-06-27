@@ -28,6 +28,40 @@ def test_layers_inferred_from_keywords() -> None:
     assert layers["com.demo.misc"] is Layer.OTHER
 
 
+def test_hexagonal_layers_inferred_for_python_dirs() -> None:
+    model = CodeModel(
+        parsed_files=[
+            ParsedFile("src/demo/api/routes.py", Language.PYTHON, 3),
+            ParsedFile("src/demo/application/services/scan.py", Language.PYTHON, 3),
+            ParsedFile("src/demo/domain/ports/source.py", Language.PYTHON, 3),
+            ParsedFile("src/demo/infrastructure/parsing/parser.py", Language.PYTHON, 3),
+            ParsedFile("src/demo/cli/main.py", Language.PYTHON, 3),
+        ]
+    )
+    architecture = infer_architecture(build_module_graph(model))
+    layers = {c.module_id: c.layer for c in architecture.components}
+    assert layers["src/demo/api"] is Layer.PRESENTATION
+    assert layers["src/demo/cli"] is Layer.PRESENTATION
+    assert layers["src/demo/application/services"] is Layer.APPLICATION
+    assert layers["src/demo/domain/ports"] is Layer.DOMAIN
+    assert layers["src/demo/infrastructure/parsing"] is Layer.INFRASTRUCTURE
+
+
+def test_python_main_is_cli_entrypoint() -> None:
+    model = CodeModel(
+        parsed_files=[
+            ParsedFile(
+                "src/demo/cli/main.py",
+                Language.PYTHON,
+                5,
+                symbols=(Symbol("main", SymbolKind.FUNCTION, 1, 4),),
+            )
+        ]
+    )
+    eps = detect_entrypoints(model)
+    assert any(e.kind is EntrypointKind.CLI_MAIN for e in eps)
+
+
 def test_spring_controller_is_http_entrypoint() -> None:
     model = CodeModel(
         parsed_files=[

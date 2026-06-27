@@ -31,6 +31,21 @@ def test_import_folder_creates_isolated_workspace(
     assert workspace.read_text("README.md").startswith("# Sample")
 
 
+def test_import_folder_with_workspace_inside_does_not_recurse(tmp_path: Path) -> None:
+    # Scanning a folder whose workspaces dir lives *inside* it must not copy the
+    # growing destination into itself (which would recurse without bound).
+    source = tmp_path / "project"
+    source.mkdir()
+    (source / "main.py").write_text("def main():\n    pass\n", encoding="utf-8")
+    workspaces = source / "workspaces"
+
+    workspace = _use_case(workspaces).execute(str(source))
+
+    assert workspace.read_text("main.py").startswith("def main")
+    # The destination did not get copied inside itself.
+    assert not (workspace.root_path / "workspaces" / workspace.root_path.name).exists()
+
+
 def test_two_imports_do_not_collide(sample_codebase: Path, tmp_path: Path) -> None:
     use_case = _use_case(tmp_path / "workspaces")
     a = use_case.execute(str(sample_codebase))

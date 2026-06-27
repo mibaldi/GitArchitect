@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -49,6 +50,12 @@ class CompositeManifestDetector(ManifestDetector):
                     self._npm(path, rel, stacks, deps)
                 elif name == "angular.json":
                     _add(stacks, DetectedStack("Angular", StackCategory.FRAMEWORK, rel))
+                elif name == "pyproject.toml":
+                    self._pyproject(path, rel, stacks, deps)
+                elif name == "requirements.txt":
+                    self._requirements(path, rel, stacks, deps)
+                elif name == "setup.py":
+                    _add(stacks, DetectedStack("Python", StackCategory.RUNTIME, rel))
             except (OSError, ValueError, ET.ParseError, json.JSONDecodeError):
                 continue
 
@@ -120,6 +127,72 @@ class CompositeManifestDetector(ManifestDetector):
                         stacks,
                         DetectedStack("Angular", StackCategory.FRAMEWORK, rel, str(version)),
                     )
+
+
+    # -- Python --------------------------------------------------------------
+    def _pyproject(
+        self, path: Path, rel: str, stacks: list[DetectedStack], deps: list[Dependency]
+    ) -> None:
+        _add(stacks, DetectedStack("Python", StackCategory.RUNTIME, rel))
+        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+        project = data.get("project", {})
+        tool = data.get("tool", {})
+
+        if isinstance(tool, dict) and "poetry" in tool:
+            _add(stacks, DetectedStack("Poetry", StackCategory.PACKAGE_MANAGER, rel))
+            poetry = tool["poetry"]
+            if isinstance(poetry, dict):
+                for dep_name in poetry.get("dependencies", {}):
+                    if str(dep_name).lower() != "python":
+                        deps.append(Dependency(str(dep_name), None, rel))
+        else:
+            _add(stacks, DetectedStack("pip", StackCategory.PACKAGE_MANAGER, rel))
+
+        if isinstance(project, dict):
+            for spec in project.get("dependencies", []):
+                name = _pep508_name(str(spec))
+                if name:
+                    deps.append(Dependency(name, None, rel))
+            extras = project.get("optional-dependencies", {})
+            if isinstance(extras, dict):
+                for group, specs in extras.items():
+                    for spec in specs if isinstance(specs, list) else []:
+                        name = _pep508_name(str(spec))
+                        if name:
+                            deps.append(Dependency(name, None, rel, scope=str(group)))
+
+        self._py_frameworks(deps, rel, stacks)
+
+    def _requirements(
+        self, path: Path, rel: str, stacks: list[DetectedStack], deps: list[Dependency]
+    ) -> None:
+        _add(stacks, DetectedStack("Python", StackCategory.RUNTIME, rel))
+        _add(stacks, DetectedStack("pip", StackCategory.PACKAGE_MANAGER, rel))
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith(("#", "-")):
+                continue
+            name = _pep508_name(line)
+            if name:
+                deps.append(Dependency(name, None, rel))
+        self._py_frameworks(deps, rel, stacks)
+
+    def _py_frameworks(
+        self, deps: list[Dependency], rel: str, stacks: list[DetectedStack]
+    ) -> None:
+        names = {d.name.lower() for d in deps}
+        for pkg, label in (
+            ("fastapi", "FastAPI"),
+            ("django", "Django"),
+            ("flask", "Flask"),
+        ):
+            if pkg in names:
+                _add(stacks, DetectedStack(label, StackCategory.FRAMEWORK, rel))
+
+
+def _pep508_name(spec: str) -> str | None:
+    match = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", spec.strip())
+    return match.group(0) if match else None
 
 
 def _add(stacks: list[DetectedStack], stack: DetectedStack) -> None:

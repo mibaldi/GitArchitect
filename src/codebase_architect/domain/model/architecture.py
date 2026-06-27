@@ -9,11 +9,12 @@ from enum import StrEnum
 class Layer(StrEnum):
     """A coarse architectural layer a module is assigned to."""
 
-    PRESENTATION = "presentation"  # REST controllers / HTTP endpoints
+    PRESENTATION = "presentation"  # REST controllers / HTTP endpoints / CLI
     UI = "ui"  # Angular components / views
     APPLICATION = "application"  # services, use cases, handlers
-    DOMAIN = "domain"  # entities, domain model
+    DOMAIN = "domain"  # entities, domain model, ports
     DATA = "data"  # repositories, persistence
+    INFRASTRUCTURE = "infrastructure"  # adapters, gateways, external integrations
     CONFIG = "config"  # configuration / bootstrap
     SHARED = "shared"  # utilities, common code
     OTHER = "other"  # unclassified

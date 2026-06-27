@@ -17,6 +17,8 @@ _EXTENSIONS: dict[str, Language] = {
     ".mjs": Language.JAVASCRIPT,
     ".cjs": Language.JAVASCRIPT,
     ".jsx": Language.TSX,
+    ".py": Language.PYTHON,
+    ".pyi": Language.PYTHON,
     ".html": Language.HTML,
     ".htm": Language.HTML,
 }

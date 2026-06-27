@@ -21,6 +21,7 @@ class Language(StrEnum):
     TYPESCRIPT = "typescript"
     TSX = "tsx"
     JAVASCRIPT = "javascript"
+    PYTHON = "python"
     HTML = "html"
     UNKNOWN = "unknown"
 

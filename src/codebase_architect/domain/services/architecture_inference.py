@@ -13,12 +13,47 @@ from codebase_architect.domain.model.module import ModuleGraph
 
 # Order matters: the first matching layer wins.
 _LAYER_KEYWORDS: list[tuple[Layer, tuple[str, ...]]] = [
-    (Layer.PRESENTATION, ("controller", "resource", "rest", "endpoint", "api", "web")),
+    (
+        Layer.PRESENTATION,
+        ("controller", "resource", "rest", "endpoint", "api", "web", "cli", "routes"),
+    ),
     (Layer.UI, ("component", "page", "view", "widget")),
     (Layer.DATA, ("repository", "repositories", "repo", "dao", "persistence", "mapper", "store")),
-    (Layer.APPLICATION, ("service", "services", "usecase", "use_case", "handler", "facade")),
-    (Layer.DOMAIN, ("domain", "entity", "entities", "model")),
-    (Layer.CONFIG, ("config", "configuration", "bootstrap")),
+    (
+        Layer.APPLICATION,
+        (
+            "service",
+            "services",
+            "usecase",
+            "usecases",
+            "use_case",
+            "use_cases",
+            "handler",
+            "facade",
+            "application",
+            "registry",
+            "registries",
+            "pipeline",
+            "orchestration",
+        ),
+    ),
+    (
+        Layer.INFRASTRUCTURE,
+        (
+            "infrastructure",
+            "infra",
+            "adapter",
+            "adapters",
+            "gateway",
+            "gateways",
+            "integration",
+            "integrations",
+            "parsing",
+            "detection",
+        ),
+    ),
+    (Layer.DOMAIN, ("domain", "entity", "entities", "model", "port", "ports")),
+    (Layer.CONFIG, ("config", "configuration", "bootstrap", "settings")),
     (Layer.SHARED, ("util", "utils", "common", "shared", "helper", "core")),
 ]
 

@@ -68,8 +68,12 @@ def _resolve_import(parsed: ParsedFile, imp: ImportRef, index: set[str]) -> str 
     target = imp.target.strip()
     if not target:
         return None
-    if target.startswith("."):
+    if target.startswith(("./", "../")):
         return _resolve_relative(parsed.path, target, index)
+    if target.startswith("."):
+        # Python dotted relative import (".services", "..core") — leading dots
+        # count levels up from the file's own package directory.
+        return _resolve_python_relative(parsed.path, target, index)
     return _resolve_dotted(target, index)
 
 
@@ -80,11 +84,36 @@ def _resolve_relative(from_path: str, target: str, index: set[str]) -> str | Non
     return candidate if candidate in index else None
 
 
+def _resolve_python_relative(from_path: str, target: str, index: set[str]) -> str | None:
+    dots = len(target) - len(target.lstrip("."))
+    suffix = target[dots:]  # remaining dotted module path, possibly empty
+    base = posixpath.dirname(from_path)
+    for _ in range(dots - 1):  # one dot = current package; each extra goes up
+        base = posixpath.dirname(base)
+    candidate = base or _ROOT
+    if suffix:
+        sub = suffix.replace(".", "/")
+        candidate = posixpath.normpath(posixpath.join(base, sub)) if base else sub
+    return candidate if candidate in index else _resolve_as_path(suffix, index)
+
+
 def _resolve_dotted(target: str, index: set[str]) -> str | None:
     if target.endswith(".*"):
         pkg = target[:-2]
-        return pkg if pkg in index else None
+        return pkg if pkg in index else _resolve_as_path(pkg, index)
     package = target.rsplit(".", 1)[0] if "." in target else target
     if package in index:
         return package
-    return target if target in index else None
+    if target in index:
+        return target
+    # Directory-keyed modules (Python/TS absolute imports): match the dotted
+    # path against a module id that is (or ends with) the same directory path.
+    return _resolve_as_path(target, index) or _resolve_as_path(package, index)
+
+
+def _resolve_as_path(dotted: str, index: set[str]) -> str | None:
+    if not dotted or "/" in dotted:
+        return None
+    suffix = dotted.replace(".", "/")
+    matches = [m for m in index if "/" in m and (m == suffix or m.endswith("/" + suffix))]
+    return max(matches, key=len) if matches else None
