@@ -10,6 +10,7 @@ repository later does not change this interface.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -53,6 +54,7 @@ class ScanJob:
     docs_dir: Path | None = None
     created_at: str = ""
     finished_at: str | None = None
+    duration_seconds: float | None = None
 
 
 class ScanService:
@@ -95,6 +97,7 @@ class ScanService:
         job.status = ScanStatus.RUNNING
         options = job.options
         docs_dir = self._artifacts_dir / scan_id / "docs"
+        started = time.monotonic()
         try:
             provider = build_ai_provider(options.ai_provider)
             pipeline = self._build_pipeline(provider)
@@ -119,6 +122,13 @@ class ScanService:
             logger.error("scan_crashed", scan_id=scan_id, error=str(exc))
         finally:
             job.finished_at = self._clock()
+            job.duration_seconds = round(time.monotonic() - started, 3)
+            logger.info(
+                "scan_metrics",
+                scan_id=scan_id,
+                status=job.status.value,
+                duration_seconds=job.duration_seconds,
+            )
 
 
 def _default_title(location: str) -> str:

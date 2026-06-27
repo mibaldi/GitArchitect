@@ -9,6 +9,7 @@ a clear, actionable error.
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,10 +29,12 @@ from codebase_architect.application.registries.renderer_registry import build_re
 from codebase_architect.application.registries.source_resolver import SourceProviderResolver
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
+from codebase_architect.infrastructure.cache.file_narrative_cache import FileNarrativeCache
 from codebase_architect.infrastructure.detection.language_detector import ExtensionLanguageDetector
 from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector
 from codebase_architect.infrastructure.export.folder_exporter import FolderExporter
 from codebase_architect.infrastructure.parsing.tree_sitter_parser import TreeSitterParser
+from codebase_architect.infrastructure.security.secret_scanner import RegexSecretScanner
 from codebase_architect.infrastructure.source_providers import default_source_providers
 from codebase_architect.shared.config import get_settings
 from codebase_architect.shared.errors import CodebaseArchitectError
@@ -93,6 +96,9 @@ def scan(
     renderer: str = typer.Option(
         "markdown", "--renderer", help="Documentation renderer (built-in: markdown; or a plugin)"
     ),
+    no_ai_cache: bool = typer.Option(
+        False, "--no-ai-cache", help="Bypass the AI narrative cache (force a fresh call)"
+    ),
 ) -> None:
     """Scan a codebase and generate clean documentation.
 
@@ -115,6 +121,10 @@ def scan(
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
+    narrative_cache = None
+    if settings.ai.cache_enabled and not no_ai_cache:
+        narrative_cache = FileNarrativeCache(Path(settings.data_dir) / "cache" / "narrative")
+
     pipeline = ScanPipeline(
         importer=ImportSourceUseCase(
             resolver=SourceProviderResolver(default_source_providers()),
@@ -128,7 +138,11 @@ def scan(
         renderer=doc_renderer,
         exporter=FolderExporter(),
         ai_provider=provider,
+        secret_scanner=RegexSecretScanner(),
+        narrative_cache=narrative_cache,
+        ai_max_tokens=settings.ai.max_tokens,
     )
+    started = time.monotonic()
     try:
         result = pipeline.run(
             location,
@@ -141,7 +155,7 @@ def scan(
         typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
 
-    _print_summary(result)
+    _print_summary(result, duration=time.monotonic() - started)
 
 
 def _default_title(location: str) -> str:
@@ -152,7 +166,7 @@ def _default_title(location: str) -> str:
     return name or "Codebase"
 
 
-def _print_summary(result: ScanResult) -> None:
+def _print_summary(result: ScanResult, *, duration: float | None = None) -> None:
     model = result.code_model
     typer.secho("Scanned codebase", fg=typer.colors.GREEN)
     typer.echo(f"  type:     {result.workspace.source_type.value}")
@@ -182,6 +196,15 @@ def _print_summary(result: ScanResult) -> None:
     typer.echo(f"  symbols:      {model.symbol_count}")
     typer.echo(f"  entrypoints:  {len(result.entrypoints)}")
 
+    typer.secho("\nSecurity", fg=typer.colors.CYAN)
+    if result.findings:
+        typer.secho(
+            f"  potential secrets: {len(result.findings)} (see security page)",
+            fg=typer.colors.YELLOW,
+        )
+    else:
+        typer.echo("  potential secrets: 0")
+
     typer.secho("\nAI narrative", fg=typer.colors.CYAN)
     if result.narrative is not None:
         narrative = result.narrative
@@ -198,6 +221,9 @@ def _print_summary(result: ScanResult) -> None:
             typer.echo(f"  open {result.bundle.root}/{result.bundle.files[0].path}")
     else:
         typer.echo("\n(no --out given; documentation not written)")
+
+    if duration is not None:
+        typer.echo(f"\nElapsed: {duration:.2f}s")
 
 
 if __name__ == "__main__":  # pragma: no cover

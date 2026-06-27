@@ -9,6 +9,7 @@ documentation, so AI prose can never introduce claims without static evidence.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 from codebase_architect.domain.model.architecture import Architecture
@@ -18,6 +19,7 @@ from codebase_architect.domain.model.feature import Feature, FeatureSource
 from codebase_architect.domain.model.module import ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.ports.ai_provider import AIProvider
+from codebase_architect.domain.ports.narrative_cache import NarrativeCache
 from codebase_architect.shared.errors import CapabilityUnavailableError
 from codebase_architect.shared.logging import get_logger
 
@@ -37,9 +39,16 @@ _SYSTEM = (
 class GenerateNarrativeUseCase:
     """Asks an :class:`AIProvider` for an overview, features and flow narratives."""
 
-    def __init__(self, provider: AIProvider, *, max_tokens: int = 4096) -> None:
+    def __init__(
+        self,
+        provider: AIProvider,
+        *,
+        max_tokens: int = 4096,
+        cache: NarrativeCache | None = None,
+    ) -> None:
         self._provider = provider
         self._max_tokens = max_tokens
+        self._cache = cache
 
     def execute(
         self,
@@ -51,6 +60,13 @@ class GenerateNarrativeUseCase:
     ) -> NarrativeReport:
         allowed = graph.module_ids() | {e.name for e in entrypoints}
         prompt = _build_prompt(model, graph, architecture, entrypoints)
+
+        cache_key = _cache_key(self._provider.name, prompt)
+        if self._cache is not None:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                logger.info("ai_narrative_cache_hit", features=len(cached.features))
+                return cached
 
         try:
             completion = self._provider.complete(
@@ -69,6 +85,8 @@ class GenerateNarrativeUseCase:
 
         report = _parse(data, allowed_refs=allowed)
         report.usage = completion.usage
+        if self._cache is not None:
+            self._cache.put(cache_key, report)
         logger.info(
             "ai_narrative_generated",
             features=len(report.features),
@@ -76,6 +94,11 @@ class GenerateNarrativeUseCase:
             tokens=completion.usage.total,
         )
         return report
+
+
+def _cache_key(provider_name: str, prompt: str) -> str:
+    digest = hashlib.sha256(f"{provider_name}\n{prompt}".encode())
+    return digest.hexdigest()
 
 
 def _build_prompt(

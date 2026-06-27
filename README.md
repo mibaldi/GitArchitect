@@ -33,6 +33,11 @@ The AI narrative pass is provider-agnostic. Built-in providers: `claude`,
 with `--ai-provider` or `CA_AI__DEFAULT_PROVIDER`; install the matching extra
 (`ai`, `ai-openai`, `ai-gemini`).
 
+Every scan also runs a **secret scan** (redacted findings on the `security`
+page) and **caches the AI narrative** so re-scanning an unchanged codebase
+reuses the previous result instead of calling the model again
+(`--no-ai-cache` forces a fresh call).
+
 Output renderers and AI providers are extensible via entry-point plugins. The
 example HTML renderer ships under `plugins/html_site`:
 

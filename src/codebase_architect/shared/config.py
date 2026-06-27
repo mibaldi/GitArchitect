@@ -24,6 +24,8 @@ class AIProviderSettings(BaseModel):
 class AISettings(BaseModel):
     default_provider: str = "claude"
     budget_per_scan_usd: float = 2.0
+    max_tokens: int = 4096
+    cache_enabled: bool = True
 
 
 class GitSettings(BaseModel):

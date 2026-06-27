@@ -48,6 +48,7 @@ class ScanSummary(BaseModel):
     external_dependencies: int
     symbols: int
     entrypoints: int
+    secrets: int
     features: int | None = None
     ai_tokens: int | None = None
 
@@ -58,6 +59,7 @@ class ScanStatusResponse(BaseModel):
     title: str | None
     location: str
     error: str | None = None
+    duration_seconds: float | None = None
     summary: ScanSummary | None = None
 
 
@@ -139,6 +141,7 @@ def to_status_response(job: ScanJob) -> ScanStatusResponse:
             external_dependencies=len(result.code_model.dependencies),
             symbols=result.code_model.symbol_count,
             entrypoints=len(result.entrypoints),
+            secrets=len(result.findings),
             features=len(result.narrative.features) if result.narrative else None,
             ai_tokens=result.narrative.usage.total if result.narrative else None,
         )
@@ -148,6 +151,7 @@ def to_status_response(job: ScanJob) -> ScanStatusResponse:
         title=job.options.title,
         location=job.options.location,
         error=job.error,
+        duration_seconds=job.duration_seconds,
         summary=summary,
     )
 

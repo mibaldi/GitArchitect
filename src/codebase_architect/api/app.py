@@ -18,11 +18,13 @@ from codebase_architect.application.services.scan_service import ScanService
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
 from codebase_architect.domain.ports.ai_provider import AIProvider
+from codebase_architect.infrastructure.cache.file_narrative_cache import FileNarrativeCache
 from codebase_architect.infrastructure.detection.language_detector import ExtensionLanguageDetector
 from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector
 from codebase_architect.infrastructure.export.folder_exporter import FolderExporter
 from codebase_architect.infrastructure.parsing.tree_sitter_parser import TreeSitterParser
 from codebase_architect.infrastructure.rendering.markdown_renderer import MarkdownMermaidRenderer
+from codebase_architect.infrastructure.security.secret_scanner import RegexSecretScanner
 from codebase_architect.infrastructure.source_providers import default_source_providers
 from codebase_architect.shared.config import Settings, get_settings
 
@@ -31,6 +33,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     workspaces_dir = Path(settings.workspaces_dir)
     artifacts_dir = Path(settings.data_dir) / "scans"
+    narrative_cache = (
+        FileNarrativeCache(Path(settings.data_dir) / "cache" / "narrative")
+        if settings.ai.cache_enabled
+        else None
+    )
 
     def build_pipeline(ai_provider: AIProvider) -> ScanPipeline:
         return ScanPipeline(
@@ -46,6 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             renderer=MarkdownMermaidRenderer(),
             exporter=FolderExporter(),
             ai_provider=ai_provider,
+            secret_scanner=RegexSecretScanner(),
+            narrative_cache=narrative_cache,
+            ai_max_tokens=settings.ai.max_tokens,
         )
 
     app = FastAPI(

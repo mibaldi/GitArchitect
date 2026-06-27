@@ -16,6 +16,7 @@ from codebase_architect.domain.model.documentation import (
     MermaidDiagram,
 )
 from codebase_architect.domain.model.entrypoint import Entrypoint
+from codebase_architect.domain.model.finding import Finding
 from codebase_architect.domain.model.module import ModuleEdge, ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 
@@ -34,6 +35,7 @@ def build_documentation(
     architecture: Architecture,
     entrypoints: list[Entrypoint],
     narrative: NarrativeReport | None = None,
+    findings: list[Finding] | None = None,
 ) -> Documentation:
     pages = (
         _overview_page(title, generated_at, base_ref, model, narrative),
@@ -43,6 +45,7 @@ def build_documentation(
         _entrypoints_page(entrypoints),
         _flows_page(entrypoints, graph, narrative),
         _dependencies_page(model),
+        _security_page(findings),
     )
     return Documentation(
         title=title, generated_at=generated_at, base_ref=base_ref, pages=pages
@@ -230,6 +233,29 @@ def _dependencies_page(model: CodeModel) -> DocPage:
         slug="dependencies",
         title="Dependencies",
         sections=(DocSection(heading="External dependencies", body=body),),
+    )
+
+
+def _security_page(findings: list[Finding] | None) -> DocPage:
+    if findings is None:
+        body = "_Secret scanning was not run._"
+    elif not findings:
+        body = "_No secrets detected._"
+    else:
+        by_rule: dict[str, list[Finding]] = {}
+        for finding in findings:
+            by_rule.setdefault(finding.rule, []).append(finding)
+        chunks = [f"**{len(findings)}** potential secret(s) found (values redacted):", ""]
+        for rule in sorted(by_rule):
+            chunks.append(f"### {rule} ({len(by_rule[rule])})")
+            for finding in sorted(by_rule[rule], key=lambda f: (f.path, f.line)):
+                chunks.append(f"- `{finding.path}:{finding.line}` — `{finding.redacted}`")
+            chunks.append("")
+        body = "\n".join(chunks).strip()
+    return DocPage(
+        slug="security",
+        title="Security",
+        sections=(DocSection(heading="Secret scan", body=body),),
     )
 
 

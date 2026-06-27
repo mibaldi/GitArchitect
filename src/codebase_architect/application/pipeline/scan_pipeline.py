@@ -7,7 +7,7 @@ pipeline already produces a complete static documentation bundle without it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
@@ -17,11 +17,14 @@ from codebase_architect.domain.model.architecture import Architecture
 from codebase_architect.domain.model.code_model import CodeModel
 from codebase_architect.domain.model.documentation import Documentation, DocumentationBundle
 from codebase_architect.domain.model.entrypoint import Entrypoint
+from codebase_architect.domain.model.finding import Finding
 from codebase_architect.domain.model.module import ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.model.workspace import Workspace
 from codebase_architect.domain.ports.ai_provider import AIProvider
 from codebase_architect.domain.ports.documentation import DocExporter, DocRenderer
+from codebase_architect.domain.ports.narrative_cache import NarrativeCache
+from codebase_architect.domain.ports.secret_scanner import SecretScanner
 from codebase_architect.domain.services.architecture_inference import infer_architecture
 from codebase_architect.domain.services.documentation_builder import build_documentation
 from codebase_architect.domain.services.entrypoints import detect_entrypoints
@@ -39,6 +42,7 @@ class ScanResult:
     entrypoints: list[Entrypoint]
     documentation: Documentation
     narrative: NarrativeReport | None = None
+    findings: list[Finding] = field(default_factory=list)
     bundle: DocumentationBundle | None = None
 
 
@@ -52,12 +56,18 @@ class ScanPipeline:
         renderer: DocRenderer,
         exporter: DocExporter,
         ai_provider: AIProvider | None = None,
+        secret_scanner: SecretScanner | None = None,
+        narrative_cache: NarrativeCache | None = None,
+        ai_max_tokens: int = 4096,
     ) -> None:
         self._importer = importer
         self._model_builder = model_builder
         self._renderer = renderer
         self._exporter = exporter
         self._ai_provider = ai_provider
+        self._secret_scanner = secret_scanner
+        self._narrative_cache = narrative_cache
+        self._ai_max_tokens = ai_max_tokens
 
     def run(
         self,
@@ -73,6 +83,7 @@ class ScanPipeline:
         graph = build_module_graph(model)
         architecture = infer_architecture(graph)
         entrypoints = detect_entrypoints(model)
+        findings = self._secret_scanner.scan(workspace) if self._secret_scanner else []
 
         narrative = self._maybe_narrate(model, graph, architecture, entrypoints, static_only)
 
@@ -85,6 +96,7 @@ class ScanPipeline:
             architecture=architecture,
             entrypoints=entrypoints,
             narrative=narrative,
+            findings=findings if self._secret_scanner else None,
         )
 
         bundle: DocumentationBundle | None = None
@@ -100,6 +112,7 @@ class ScanPipeline:
             entrypoints=entrypoints,
             documentation=documentation,
             narrative=narrative,
+            findings=findings,
             bundle=bundle,
         )
 
@@ -113,7 +126,12 @@ class ScanPipeline:
     ) -> NarrativeReport | None:
         if static_only or self._ai_provider is None or not self._ai_provider.available():
             return None
-        return GenerateNarrativeUseCase(self._ai_provider).execute(
+        narrator = GenerateNarrativeUseCase(
+            self._ai_provider,
+            max_tokens=self._ai_max_tokens,
+            cache=self._narrative_cache,
+        )
+        return narrator.execute(
             model=model,
             graph=graph,
             architecture=architecture,
