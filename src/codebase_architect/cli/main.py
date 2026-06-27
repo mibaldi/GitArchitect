@@ -24,6 +24,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised only without 
 
 from codebase_architect.application.pipeline.scan_pipeline import ScanPipeline, ScanResult
 from codebase_architect.application.registries.ai_registry import build_ai_provider
+from codebase_architect.application.registries.renderer_registry import build_renderer
 from codebase_architect.application.registries.source_resolver import SourceProviderResolver
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
@@ -31,7 +32,6 @@ from codebase_architect.infrastructure.detection.language_detector import Extens
 from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector
 from codebase_architect.infrastructure.export.folder_exporter import FolderExporter
 from codebase_architect.infrastructure.parsing.tree_sitter_parser import TreeSitterParser
-from codebase_architect.infrastructure.rendering.markdown_renderer import MarkdownMermaidRenderer
 from codebase_architect.infrastructure.source_providers import default_source_providers
 from codebase_architect.shared.config import get_settings
 from codebase_architect.shared.errors import CodebaseArchitectError
@@ -90,6 +90,9 @@ def scan(
     ai_provider: str | None = typer.Option(
         None, "--ai-provider", help="AI provider for the narrative (default: from config)"
     ),
+    renderer: str = typer.Option(
+        "markdown", "--renderer", help="Documentation renderer (built-in: markdown; or a plugin)"
+    ),
 ) -> None:
     """Scan a codebase and generate clean documentation.
 
@@ -106,6 +109,11 @@ def scan(
             f"AI provider '{provider.name}' is not configured; running static-only.",
             fg=typer.colors.YELLOW,
         )
+    try:
+        doc_renderer = build_renderer(renderer)
+    except CodebaseArchitectError as exc:
+        typer.secho(f"Error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
 
     pipeline = ScanPipeline(
         importer=ImportSourceUseCase(
@@ -117,7 +125,7 @@ def scan(
             parser=TreeSitterParser(),
             manifest_detector=CompositeManifestDetector(),
         ),
-        renderer=MarkdownMermaidRenderer(),
+        renderer=doc_renderer,
         exporter=FolderExporter(),
         ai_provider=provider,
     )
@@ -186,7 +194,8 @@ def _print_summary(result: ScanResult) -> None:
     if result.bundle is not None:
         typer.secho("\nDocumentation written", fg=typer.colors.GREEN)
         typer.echo(f"  {result.bundle.root}  ({len(result.bundle.files)} files)")
-        typer.echo(f"  open {result.bundle.root}/README.md")
+        if result.bundle.files:
+            typer.echo(f"  open {result.bundle.root}/{result.bundle.files[0].path}")
     else:
         typer.echo("\n(no --out given; documentation not written)")
 

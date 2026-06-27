@@ -26,6 +26,21 @@ architect serve --port 8000
 
 Scans run asynchronously; poll the status endpoint until it reports `done`.
 
+### AI providers & plugins
+
+The AI narrative pass is provider-agnostic. Built-in providers: `claude`,
+`openai`, `openrouter`, `gemini`, `local` (any OpenAI-compatible server). Select
+with `--ai-provider` or `CA_AI__DEFAULT_PROVIDER`; install the matching extra
+(`ai`, `ai-openai`, `ai-gemini`).
+
+Output renderers and AI providers are extensible via entry-point plugins. The
+example HTML renderer ships under `plugins/html_site`:
+
+```
+pip install -e plugins/html_site
+architect scan <source> --out ./site --renderer html   # browsable index.html
+```
+
 ## How it works
 
 A single scan runs a pipeline:

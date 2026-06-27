@@ -30,6 +30,11 @@ def test_claude_availability_follows_env(monkeypatch: pytest.MonkeyPatch) -> Non
     [
         ("claude", "claude"),
         ("anthropic", "claude"),
+        ("openai", "openai"),
+        ("openrouter", "openrouter"),
+        ("local", "local"),
+        ("gemini", "gemini"),
+        ("google", "gemini"),
         ("null", "null"),
         (None, "null"),
         ("unknown-provider", "null"),
@@ -37,3 +42,15 @@ def test_claude_availability_follows_env(monkeypatch: pytest.MonkeyPatch) -> Non
 )
 def test_registry_resolves_providers(name: str | None, expected: str) -> None:
     assert build_ai_provider(name).name == expected
+
+
+def test_openai_availability_follows_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert build_ai_provider("openai").available() is False
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert build_ai_provider("openai").available() is True
+
+
+def test_local_provider_needs_no_key() -> None:
+    # A local OpenAI-compatible server is assumed reachable; no API key required.
+    assert build_ai_provider("local").available() is True

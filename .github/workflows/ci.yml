@@ -25,9 +25,10 @@ jobs:
         run: |
           uv venv --python 3.11 .venv
           uv pip install --python .venv/bin/python -e '.[dev,cli,api]'
+          uv pip install --python .venv/bin/python -e plugins/html_site
 
       - name: Lint (ruff)
-        run: .venv/bin/ruff check src tests
+        run: .venv/bin/ruff check src tests plugins
 
       - name: Types (mypy)
         run: .venv/bin/mypy

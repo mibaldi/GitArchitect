@@ -23,6 +23,8 @@ dependencies = [
 # Optional capabilities are intentionally NOT in the core dependency set.
 # The core must run even when these are absent (see SDD: degradable capabilities).
 ai = ["anthropic>=0.40"]
+ai-openai = ["openai>=1.0"]
+ai-gemini = ["google-generativeai>=0.5"]
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
 cli = ["typer>=0.12", "rich>=13.7"]
 workers = ["arq>=0.25", "redis>=5.0"]
@@ -76,8 +78,8 @@ disallow_untyped_defs = true
 no_implicit_optional = true
 
 [[tool.mypy.overrides]]
-# Optional dependency (the 'ai' extra); imported lazily and may be absent.
-module = ["anthropic"]
+# Optional AI SDKs (the ai* extras); imported lazily and may be absent.
+module = ["anthropic", "openai", "google", "google.generativeai"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

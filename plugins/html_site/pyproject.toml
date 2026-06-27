@@ -1,0 +1,18 @@
+[project]
+name = "ca-plugin-html"
+version = "0.0.0"
+description = "HTML static-site renderer plugin for Codebase Architect."
+requires-python = ">=3.11"
+# 'codebase-architect' is intentionally NOT listed as a dependency: this example
+# plugin is installed into an environment that already has the host package
+# (editable). Listing it would make the resolver fetch it from an index.
+
+[project.entry-points."codebase_architect.renderers"]
+html = "ca_plugin_html:HtmlSiteRenderer"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ca_plugin_html"]

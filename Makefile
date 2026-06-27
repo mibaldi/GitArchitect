@@ -16,7 +16,7 @@ fmt:
 	$(VENV)/bin/ruff check --fix src tests
 
 lint:
-	$(VENV)/bin/ruff check src tests
+	$(VENV)/bin/ruff check src tests plugins
 
 type:
 	$(VENV)/bin/mypy
