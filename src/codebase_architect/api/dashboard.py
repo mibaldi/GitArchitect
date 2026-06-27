@@ -92,6 +92,9 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .toggle { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
 .toggle input { width: auto; }
 .toggle label { margin: 0; text-transform: none; letter-spacing: 0; font-size: .85rem; color: var(--text); font-weight: 500; }
+.upload-row { margin: 6px 0 4px; }
+.upload-label { display: block; margin: 0 0 4px; text-transform: none; letter-spacing: 0; font-size: .78rem; color: var(--muted); font-weight: 500; }
+.upload-row input[type=file] { width: 100%; font-size: .8rem; color: var(--muted); }
 .btn {
   width: 100%; margin-top: 14px; padding: 11px; border: none; border-radius: 10px;
   background: var(--accent); color: #fff; font-weight: 600; font-family: "Space Grotesk";
@@ -203,7 +206,11 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
     <form class="card scan-card" id="scanForm">
       <h2>New scan</h2>
       <label>Source</label>
-      <input id="location" placeholder="https://github.com/user/repo.git" required>
+      <input id="location" placeholder="https://github.com/user/repo.git">
+      <div class="upload-row">
+        <label for="upload" class="upload-label">or upload a .zip / .tar.gz (temporary)</label>
+        <input type="file" id="upload" accept=".zip,.tar.gz,.tgz,.tar">
+      </div>
       <label>Title (optional)</label>
       <input id="title" placeholder="My Project">
       <div class="toggle">
@@ -334,19 +341,42 @@ async function refreshScans() {
 $("scanForm").onsubmit = async e => {
   e.preventDefault();
   $("formErr").textContent = "";
-  const btn = $("runBtn"); btn.disabled = true; btn.textContent = "Starting…";
   const staticOnly = $("staticOnly").checked;
-  const body = {
-    location: $("location").value.trim(),
-    title: $("title").value.trim() || null,
-    static_only: staticOnly,
-    ai_provider: staticOnly ? null : (LS("provider") || null),
-    ai_api_key: staticOnly ? null : (LS("apiKey") || null),
-    ai_base_url: staticOnly ? null : (LS("baseUrl") || null),
-    ai_model: staticOnly ? null : (LS("model") || null),
-  };
+  const title = $("title").value.trim();
+  const location = $("location").value.trim();
+  const file = $("upload").files[0];
+  if (!location && !file) {
+    $("formErr").textContent = "Enter a Git URL / path, or choose an archive to upload.";
+    return;
+  }
+  const btn = $("runBtn"); btn.disabled = true; btn.textContent = "Starting…";
   try {
-    const { id } = await api("/scans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    let id;
+    if (file) {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (title) fd.append("title", title);
+      fd.append("static_only", staticOnly);
+      if (!staticOnly) {
+        if (LS("provider")) fd.append("ai_provider", LS("provider"));
+        if (LS("apiKey")) fd.append("ai_api_key", LS("apiKey"));
+        if (LS("baseUrl")) fd.append("ai_base_url", LS("baseUrl"));
+        if (LS("model")) fd.append("ai_model", LS("model"));
+      }
+      ({ id } = await api("/scans/upload", { method: "POST", body: fd }));
+    } else {
+      const body = {
+        location,
+        title: title || null,
+        static_only: staticOnly,
+        ai_provider: staticOnly ? null : (LS("provider") || null),
+        ai_api_key: staticOnly ? null : (LS("apiKey") || null),
+        ai_base_url: staticOnly ? null : (LS("baseUrl") || null),
+        ai_model: staticOnly ? null : (LS("model") || null),
+      };
+      ({ id } = await api("/scans", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
+    }
+    $("upload").value = "";
     await refreshScans(); selectScan(id);
   } catch (err) { $("formErr").textContent = err.message; }
   finally { btn.disabled = false; btn.textContent = "Run scan"; }

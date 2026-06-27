@@ -26,7 +26,7 @@ dependencies = [
 ai = ["anthropic>=0.40"]
 ai-openai = ["openai>=1.0"]
 ai-gemini = ["google-generativeai>=0.5"]
-api = ["fastapi>=0.110", "uvicorn>=0.29"]
+api = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
 cli = ["typer>=0.12", "rich>=13.7"]
 workers = ["arq>=0.25", "redis>=5.0"]
 persistence = ["sqlalchemy>=2.0", "alembic>=1.13", "psycopg[binary]>=3.1"]
@@ -71,7 +71,13 @@ known-first-party = ["codebase_architect"]
 
 [tool.ruff.lint.flake8-bugbear]
 # Typer and FastAPI both call these in parameter defaults by design.
-extend-immutable-calls = ["typer.Option", "typer.Argument", "fastapi.Depends"]
+extend-immutable-calls = [
+    "typer.Option",
+    "typer.Argument",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+]
 
 [tool.mypy]
 python_version = "3.11"

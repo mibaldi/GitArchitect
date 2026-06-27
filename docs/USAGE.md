@@ -90,9 +90,12 @@ an unchanged codebase reuses the result and spends 0 tokens. Bypass with
 architect serve            # http://127.0.0.1:47800  (non-standard port)
 ```
 
-Open `http://127.0.0.1:47800/` for the dashboard: choose a source, launch a
-scan, watch the status, **download** the `.zip`, and **view** each page
-(Markdown + Mermaid) rendered live. OpenAPI docs are at `/docs`.
+Open `http://127.0.0.1:47800/` for the dashboard: enter a source **or upload a
+`.zip` / `.tar.gz`**, launch a scan, watch the status, **download** the `.zip`,
+and **view** each page (Markdown + Mermaid) rendered live. Uploaded archives are
+streamed to a temp file, scanned, and **discarded** — nothing is persisted on
+the server, so you don't need to place a file on the host first. OpenAPI docs
+are at `/docs`.
 
 REST endpoints (everything the dashboard uses):
 
@@ -101,6 +104,9 @@ curl localhost:47800/health
 # Submit a scan (async): returns 202 {id, status}
 curl -X POST localhost:47800/scans -H 'content-type: application/json' \
   -d '{"location": "/path/to/project", "static_only": true}'
+# Or upload an archive (multipart); it is scanned then deleted:
+curl -X POST localhost:47800/scans/upload \
+  -F file=@project.zip -F static_only=true
 # Poll status until "done", then read the docs / download the bundle
 curl localhost:47800/scans/<id>
 curl localhost:47800/scans/<id>/documentation

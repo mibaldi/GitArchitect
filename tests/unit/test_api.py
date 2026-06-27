@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -109,6 +110,43 @@ def test_download_returns_zip(client: TestClient, project: Path) -> None:
 
 def test_unknown_scan_is_404(client: TestClient) -> None:
     assert client.get("/scans/scan_does_not_exist").status_code == 404
+
+
+def _zip_bytes() -> io.BytesIO:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr(
+            "proj/src/main/java/com/demo/web/GreetController.java",
+            "package com.demo.web;\n"
+            "import org.springframework.web.bind.annotation.RestController;\n"
+            "public class GreetController {}\n",
+        )
+    buf.seek(0)
+    return buf
+
+
+def test_upload_archive_is_scanned_then_discarded(client: TestClient) -> None:
+    response = client.post(
+        "/scans/upload",
+        files={"file": ("proj.zip", _zip_bytes(), "application/zip")},
+        data={"static_only": "true", "title": "Uploaded"},
+    )
+    assert response.status_code == 202
+    scan_id = response.json()["id"]
+
+    status = client.get(f"/scans/{scan_id}").json()
+    assert status["status"] == "done"
+    assert status["summary"]["entrypoints"] >= 1
+    # The temporary upload file is cleaned up after the background scan runs.
+    assert not list(Path(tempfile.gettempdir()).glob("ca-upload-*"))
+
+
+def test_upload_rejects_unsupported_type(client: TestClient) -> None:
+    response = client.post(
+        "/scans/upload",
+        files={"file": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
+    )
+    assert response.status_code == 400
 
 
 def test_credentials_accepted_but_never_echoed(client: TestClient, project: Path) -> None:
