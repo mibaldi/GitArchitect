@@ -44,3 +44,35 @@ class Architecture:
     def layers_present(self) -> list[Layer]:
         seen = {c.layer for c in self.components}
         return [layer for layer in Layer if layer in seen]
+
+    def layer_of(self) -> dict[str, Layer]:
+        return {c.module_id: c.layer for c in self.components}
+
+
+@dataclass(frozen=True)
+class LayerViolation:
+    """A dependency that points outward, against the inward-pointing rule."""
+
+    source: str
+    target: str
+    source_layer: Layer
+    target_layer: Layer
+
+
+@dataclass(frozen=True)
+class Cycle:
+    """A group of modules that depend on each other (a dependency cycle)."""
+
+    modules: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ArchitectureReport:
+    """Findings about how well the module graph respects its layering."""
+
+    violations: tuple[LayerViolation, ...] = ()
+    cycles: tuple[Cycle, ...] = ()
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.violations and not self.cycles

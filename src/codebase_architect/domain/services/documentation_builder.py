@@ -7,7 +7,11 @@ re-scans that should yield stable diffs).
 
 from __future__ import annotations
 
-from codebase_architect.domain.model.architecture import Architecture, Layer
+from codebase_architect.domain.model.architecture import (
+    Architecture,
+    ArchitectureReport,
+    Layer,
+)
 from codebase_architect.domain.model.code_model import CodeModel
 from codebase_architect.domain.model.documentation import (
     DocPage,
@@ -19,6 +23,7 @@ from codebase_architect.domain.model.entrypoint import Entrypoint
 from codebase_architect.domain.model.finding import Finding
 from codebase_architect.domain.model.module import ModuleEdge, ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
+from codebase_architect.domain.services.architecture_rules import analyze_architecture
 
 # Caps keep generated diagrams readable on large codebases.
 _MAX_GRAPH_NODES = 60
@@ -119,6 +124,7 @@ def _features_page(narrative: NarrativeReport | None) -> DocPage:
 
 def _architecture_page(architecture: Architecture, graph: ModuleGraph) -> DocPage:
     sections: list[DocSection] = []
+    report = analyze_architecture(architecture, graph)
     grouped = architecture.by_layer()
     body_lines: list[str] = []
     for layer in architecture.layers_present():
@@ -130,7 +136,7 @@ def _architecture_page(architecture: Architecture, graph: ModuleGraph) -> DocPag
     layers_body = "\n".join(body_lines).strip() or "_No modules to classify._"
     sections.append(DocSection(heading="Layers", body=layers_body))
 
-    diagram = _module_graph_diagram(graph)
+    diagram = _layered_graph_diagram(graph, architecture, report)
     sections.append(
         DocSection(
             heading="Module dependencies",
@@ -138,7 +144,32 @@ def _architecture_page(architecture: Architecture, graph: ModuleGraph) -> DocPag
             diagram=diagram,
         )
     )
+    sections.append(
+        DocSection(heading="Dependency rules", body=_dependency_rules_body(report))
+    )
     return DocPage(slug="architecture", title="Architecture", sections=tuple(sections))
+
+
+def _dependency_rules_body(report: ArchitectureReport) -> str:
+    if report.is_clean:
+        return "✓ No layering violations or dependency cycles detected."
+    chunks: list[str] = []
+    if report.violations:
+        chunks.append(
+            f"**{len(report.violations)} layering violation(s)** "
+            "(an inner layer depends on an outer one):"
+        )
+        for v in report.violations:
+            chunks.append(
+                f"- `{v.source}` ({v.source_layer.value}) → "
+                f"`{v.target}` ({v.target_layer.value})"
+            )
+        chunks.append("")
+    if report.cycles:
+        chunks.append(f"**{len(report.cycles)} dependency cycle(s):**")
+        for cycle in report.cycles:
+            chunks.append("- " + " ↔ ".join(f"`{m}`" for m in cycle.modules))
+    return "\n".join(chunks).strip()
 
 
 def _modules_page(graph: ModuleGraph) -> DocPage:
@@ -262,16 +293,41 @@ def _security_page(findings: list[Finding] | None) -> DocPage:
 # -- Mermaid helpers --------------------------------------------------------
 
 
-def _module_graph_diagram(graph: ModuleGraph) -> MermaidDiagram:
+def _layered_graph_diagram(
+    graph: ModuleGraph, architecture: Architecture, report: ArchitectureReport
+) -> MermaidDiagram:
+    """Module graph grouped into a mermaid subgraph per layer.
+
+    Nodes are clustered by their inferred layer so the picture reads top-down by
+    responsibility instead of as a flat blob; edges that violate the layering
+    rule are drawn dotted with a warning marker.
+    """
     modules = graph.modules[:_MAX_GRAPH_NODES]
     ids = {m.id for m in modules}
     node_id = {m.id: f"n{i}" for i, m in enumerate(modules)}
-    lines = ["flowchart LR"]
+    layer_of = architecture.layer_of()
+    violations = {(v.source, v.target) for v in report.violations}
+
+    by_layer: dict[Layer, list[str]] = {}
     for module in modules:
-        lines.append(f'    {node_id[module.id]}["{_escape(module.id)}"]')
+        layer = layer_of.get(module.id, Layer.OTHER)
+        by_layer.setdefault(layer, []).append(module.id)
+
+    lines = ["flowchart LR"]
+    for layer in Layer:
+        members = by_layer.get(layer)
+        if not members:
+            continue
+        lines.append(f"    subgraph {_layer_title(layer)}")
+        for module_id in members:
+            lines.append(f'        {node_id[module_id]}["{_escape(module_id)}"]')
+        lines.append("    end")
     for edge in graph.edges:
         if edge.source in ids and edge.target in ids:
-            lines.append(f"    {node_id[edge.source]} --> {node_id[edge.target]}")
+            if (edge.source, edge.target) in violations:
+                lines.append(f"    {node_id[edge.source]} -.->|⚠| {node_id[edge.target]}")
+            else:
+                lines.append(f"    {node_id[edge.source]} --> {node_id[edge.target]}")
     return MermaidDiagram(title="Module dependencies", code="\n".join(lines))
 
 
