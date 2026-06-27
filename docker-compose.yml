@@ -1,8 +1,34 @@
-# Development services for phases that need persistence / async workers
-# (API + workers, F6+). The core CLI scan does not require these.
+# Run the Codebase Architect REST API:
+#   docker compose up --build
+#   curl localhost:8000/health
+#
+# Scan a local project by mounting it (see the commented volume below) and
+# POSTing its in-container path:
+#   curl -X POST localhost:8000/scans \
+#     -H 'content-type: application/json' \
+#     -d '{"location": "/scan/myproject", "static_only": true}'
 services:
+  api:
+    build: .
+    image: codebase-architect
+    ports:
+      - "8000:8000"
+    environment:
+      CA_AI__DEFAULT_PROVIDER: ${CA_AI__DEFAULT_PROVIDER:-claude}
+      # Provide a key to enable the AI narrative; without it scans run static-only.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ca-data:/data
+      - ca-workspaces:/workspaces
+      # Mount a project to scan it (read-only), then POST {"location": "/scan/<name>"}:
+      # - ./myproject:/scan/myproject:ro
+
+  # Persistence services for later phases (API/worker state in a DB + a queue).
+  # The app currently keeps scan state in memory, so these are opt-in:
+  #   docker compose --profile full up --build
   postgres:
     image: postgres:16-alpine
+    profiles: ["full"]
     environment:
       POSTGRES_USER: architect
       POSTGRES_PASSWORD: architect
@@ -19,6 +45,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    profiles: ["full"]
     ports:
       - "6379:6379"
     healthcheck:
@@ -28,4 +55,6 @@ services:
       retries: 5
 
 volumes:
+  ca-data:
+  ca-workspaces:
   pgdata:
