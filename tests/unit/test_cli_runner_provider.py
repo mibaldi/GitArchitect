@@ -44,6 +44,18 @@ def test_registry_builds_cli_runner() -> None:
     assert isinstance(provider, CliRunnerProvider)
 
 
+def test_generic_fields_map_to_secret_and_agent(captured) -> None:
+    # The dashboard drives the runner via the generic fields: api_key -> shared
+    # secret, model -> agent. Verify the registry's uniform call maps them.
+    captured["status"], captured["body"] = 200, _ok_body()
+    provider = build_ai_provider(
+        "cli_runner", base_url="http://host:8787", api_key="sek", model="codex"
+    )
+    provider.complete(system="", prompt="hi")
+    assert captured["payload"]["agent"] == "codex"
+    assert captured["headers"]["Authorization"] == "Bearer sek"
+
+
 def test_success_returns_completion_and_posts_expected_payload(captured) -> None:
     captured["status"], captured["body"] = 200, _ok_body("hello from claude")
     provider = CliRunnerProvider(base_url="http://host:8787", agent="claude", working_dir="/dev/p")

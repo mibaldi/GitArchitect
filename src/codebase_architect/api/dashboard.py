@@ -286,16 +286,18 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
         <option>claude</option><option>openai</option><option>openrouter</option>
         <option>gemini</option><option>local</option><option>cli_runner</option>
       </select>
-      <label>API key</label>
+      <label id="lblApiKey">API key</label>
       <input id="apiKey" type="password" placeholder="sk-… (empty for a local runner)">
-      <label>Endpoint / base URL (optional)</label>
+      <label id="lblBaseUrl">Endpoint / base URL (optional)</label>
       <input id="baseUrl" placeholder="http://100.x.y.z:11434/v1">
-      <label>Model (optional)</label>
+      <label id="lblModel">Model (optional)</label>
       <input id="model" placeholder="claude-opus-4-8 / gpt-4o-mini / llama3">
+      <button class="btn" id="testRunnerBtn" type="button" style="display:none;background:var(--surface-2);color:var(--text);margin-bottom:8px">Test runner connection</button>
+      <div class="saved" id="testRunnerMsg"></div>
       <button class="btn" type="submit">Save settings</button>
       <div class="saved" id="savedMsg"></div>
     </form>
-    <div class="hint">
+    <div class="hint" id="settingsHint">
       <b>Local runner (no tokens).</b> Run an agent on your own machine (Mac mini,
       Ollama, LM Studio, Codex) reachable over your tailnet and point the base URL
       at it: provider <b>local</b>/<b>openai</b> for OpenAI-compatible servers, or
@@ -384,6 +386,31 @@ $("settingsForm").onsubmit = e => {
   ["provider", "apiKey", "baseUrl", "model"].forEach(id => SET(id, $(id).value.trim()));
   $("savedMsg").textContent = "✓ Saved";
   updateAIChip();
+};
+
+/* provider-aware settings labels (the CLI runner reuses the generic fields) */
+function applyProviderUI() {
+  const cli = $("provider").value === "cli_runner";
+  $("lblApiKey").textContent = cli ? "Shared secret (optional)" : "API key";
+  $("lblBaseUrl").textContent = cli ? "Runner URL" : "Endpoint / base URL (optional)";
+  $("lblModel").textContent = cli ? "Agent" : "Model (optional)";
+  $("apiKey").placeholder = cli ? "matches CLI_RUNNER_SHARED_SECRET" : "sk-… (empty for a local runner)";
+  $("baseUrl").placeholder = cli ? "http://100.x.y.z:8787  (Mac Tailscale IP)" : "http://100.x.y.z:11434/v1";
+  $("model").placeholder = cli ? "claude | codex" : "claude-opus-4-8 / gpt-4o-mini / llama3";
+  $("testRunnerBtn").style.display = cli ? "" : "none";
+  if (cli) $("settingsHint").innerHTML = "<b>Remote CLI runner (no API key).</b> Reuses a logged-in Claude/Codex CLI on another machine (e.g. your Mac on Tailscale). Start it from <b>tools/cli_runner</b>, then set the <b>Runner URL</b> and (if used) the <b>Shared secret</b>, pick the <b>Agent</b>, and uncheck \"Static only\" when scanning. Settings are stored in this browser only.";
+}
+$("provider").addEventListener("change", () => { applyProviderUI(); $("testRunnerMsg").textContent = ""; });
+applyProviderUI();
+$("testRunnerBtn").onclick = async () => {
+  const base = $("baseUrl").value.trim();
+  $("testRunnerMsg").textContent = base ? "Checking…" : "Enter the runner URL first.";
+  if (!base) return;
+  try {
+    const r = await api("/ai/runner-check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ base_url: base }) });
+    $("testRunnerMsg").textContent = r.reachable ? "✓ Runner reachable" : "✗ Not reachable";
+    $("testRunnerMsg").style.color = r.reachable ? "var(--ok)" : "#d23";
+  } catch (err) { $("testRunnerMsg").textContent = "✗ " + err.message; $("testRunnerMsg").style.color = "#d23"; }
 };
 
 /* functional spec wizard */

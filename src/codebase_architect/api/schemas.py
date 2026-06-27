@@ -257,6 +257,15 @@ class DocumentRequest(BaseModel):
     ai_model: str | None = None
 
 
+class RunnerCheckRequest(BaseModel):
+    base_url: str
+
+
+class RunnerCheckResponse(BaseModel):
+    reachable: bool
+    detail: str
+
+
 class FunctionalSpecResponse(FunctionalSpecPayload):
     id: str
     created_at: str

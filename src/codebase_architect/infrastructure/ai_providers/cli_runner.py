@@ -37,19 +37,24 @@ class CliRunnerProvider(AIProvider):
     def __init__(
         self,
         *,
-        api_key: str | None = None,  # unused; kept for a uniform registry call
+        api_key: str | None = None,
         base_url: str | None = None,
-        model: str | None = None,  # unused
+        model: str | None = None,
         agent: str | None = None,
         timeout_seconds: int | None = None,
         shared_secret: str | None = None,
         working_dir: str | None = None,
     ) -> None:
+        # So the dashboard (and the registry's uniform call) can drive the runner
+        # with the generic fields: base_url -> runner URL, api_key -> shared
+        # secret, model -> agent. Explicit kwargs win, then those, then settings.
         cfg = get_settings().cli_runner
         self._base_url = (base_url or cfg.base_url or "").rstrip("/")
-        self._agent = agent or cfg.agent or "claude"
+        self._agent = agent or model or cfg.agent or "claude"
         self._timeout = int(timeout_seconds or cfg.timeout_seconds or 600)
-        self._secret = shared_secret if shared_secret is not None else cfg.shared_secret
+        self._secret: str | None = (
+            shared_secret if shared_secret is not None else (api_key or cfg.shared_secret)
+        )
         self._working_dir = working_dir if working_dir is not None else cfg.working_dir
 
     def available(self) -> bool:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from fastapi import (
@@ -27,6 +29,8 @@ from codebase_architect.api.schemas import (
     FunctionalSpecPayload,
     FunctionalSpecResponse,
     ReconciliationResponse,
+    RunnerCheckRequest,
+    RunnerCheckResponse,
     ScanRef,
     ScanRequest,
     ScanStatusResponse,
@@ -64,7 +68,10 @@ from codebase_architect.domain.services.sequence_diagram import spec_sequences
 from codebase_architect.domain.services.spec_document import build_spec_document
 from codebase_architect.infrastructure.export.zip_archive import zip_directory
 from codebase_architect.shared.errors import NotFoundError
+from codebase_architect.shared.logging import get_logger
+from codebase_architect.shared.redaction import redact_url_credentials
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -492,3 +499,22 @@ def spec_document(
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{safe}.md"'},
     )
+
+
+@router.post("/ai/runner-check", response_model=RunnerCheckResponse)
+def runner_check(body: RunnerCheckRequest) -> RunnerCheckResponse:
+    """Ping a CLI runner's /health from the server (the browser can't reach the
+    tailnet directly), so the dashboard can verify the URL before scanning."""
+    reachable, detail = _ping_runner(body.base_url)
+    return RunnerCheckResponse(reachable=reachable, detail=detail)
+
+
+def _ping_runner(base_url: str) -> tuple[bool, str]:
+    url = base_url.rstrip("/") + "/health"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310 - internal runner
+            ok = 200 <= int(response.status) < 300
+        return ok, "ok" if ok else "unexpected status"
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        logger.warning("runner_check_failed", url=redact_url_credentials(url), error=str(exc))
+        return False, "not reachable"
