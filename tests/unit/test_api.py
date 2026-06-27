@@ -222,6 +222,43 @@ def test_reconcile_spec_against_scan(client: TestClient, project: Path) -> None:
     assert scan_id in client.get(f"/specs/{spec_id}").json()["linked_scan_ids"]
 
 
+def test_api_flow_across_separately_scanned_projects(
+    client: TestClient, tmp_path: Path
+) -> None:
+    back = tmp_path / "back" / "src"
+    back.mkdir(parents=True)
+    (back / "GreetController.java").write_text(
+        "package com.demo;\n"
+        "@RestController\n"
+        '@RequestMapping("/api")\n'
+        "public class GreetController {\n"
+        '  @GetMapping("/greet")\n'
+        "  public String g() { return \"\"; }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    front = tmp_path / "front" / "src"
+    front.mkdir(parents=True)
+    (front / "greet.service.ts").write_text(
+        "export class GreetService {\n"
+        "  constructor(private http) {}\n"
+        "  g() { return this.http.get('/api/greet'); }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    back_id = _submit(client, tmp_path / "back")
+    front_id = _submit(client, tmp_path / "front")
+    spec_id = client.post("/specs", json=_spec_payload()).json()["id"]
+    client.post(f"/specs/{spec_id}/scans/{back_id}")
+    client.post(f"/specs/{spec_id}/scans/{front_id}")
+
+    flow = client.get(f"/specs/{spec_id}/api-flow").json()
+    assert any(
+        e["from_scan"] == front_id and e["to_scan"] == back_id and e["path"] == "/api/greet"
+        for e in flow["edges"]
+    )
+
+
 def test_scans_persist_across_restart(tmp_path: Path, project: Path) -> None:
     settings = Settings(
         workspaces_dir=str(tmp_path / "ws"),

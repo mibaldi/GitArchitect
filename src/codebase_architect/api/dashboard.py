@@ -337,6 +337,13 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
       </div>
       <div class="err" id="recErr"></div>
       <div id="recResult" style="margin-top:14px"></div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">
+      <div class="spec-field">Project group — link the scans that make up this product</div>
+      <p class="spec-hint">Scanned separately (frontend, backend, microservices). Linking lets the API flow match calls in one to endpoints in another.</p>
+      <div id="recGroup"></div>
+      <button class="btn" id="recFlowBtn" style="margin-top:10px">Compute API flow</button>
+      <div class="err" id="recFlowErr"></div>
+      <div id="recFlow" style="margin-top:12px"></div>
     </div>
   </div>
 </aside>
@@ -507,16 +514,59 @@ let recSpecId = null;
 async function openReconcile(id, product) {
   recSpecId = id;
   $("recTitle").textContent = product;
-  $("recErr").textContent = "";
-  $("recResult").innerHTML = "";
+  $("recErr").textContent = ""; $("recResult").innerHTML = "";
+  $("recFlowErr").textContent = ""; $("recFlow").innerHTML = "";
   showReconcile();
   try {
-    const scans = await api("/scans");
-    const done = [];
-    for (const s of scans) { if (s.status === "done") done.push(s); }
+    const [scans, spec] = await Promise.all([api("/scans"), api("/specs/" + id)]);
+    const done = scans.filter(s => s.status === "done");
+    const linked = new Set(spec.linked_scan_ids || []);
     const sel = $("recScan");
     sel.innerHTML = done.length ? done.map(s => `<option value="${s.id}">scan ${s.id.slice(5, 13)}</option>`).join("") : '<option value="">No finished scans</option>';
+    const group = $("recGroup");
+    group.innerHTML = done.length ? "" : '<div class="cov-ev">No finished scans to link.</div>';
+    done.forEach(s => {
+      const row = document.createElement("label");
+      row.className = "toggle"; row.style.margin = "4px 0";
+      row.innerHTML = `<input type="checkbox" ${linked.has(s.id) ? "checked" : ""}><span>scan ${s.id.slice(5, 13)}</span>`;
+      row.querySelector("input").onchange = async ev => {
+        const method = ev.target.checked ? "POST" : "DELETE";
+        try { await api(`/specs/${recSpecId}/scans/${s.id}`, { method }); }
+        catch (err) { $("recFlowErr").textContent = err.message; ev.target.checked = !ev.target.checked; }
+      };
+      group.appendChild(row);
+    });
   } catch (err) { $("recErr").textContent = err.message; }
+}
+$("recFlowBtn").onclick = async () => {
+  $("recFlowErr").textContent = ""; $("recFlow").innerHTML = "Matching…";
+  try { $("recFlow").innerHTML = renderApiFlow(await api(`/specs/${recSpecId}/api-flow`)); renderMermaidIn($("recFlow")); }
+  catch (err) { $("recFlow").innerHTML = ""; $("recFlowErr").textContent = err.message; }
+};
+function renderApiFlow(r) {
+  if (!r.scans.length) return '<div class="cov-ev">Link at least one scan above.</div>';
+  if (!r.edges.length && !r.unmatched.length) return '<div class="cov-ev">No outbound calls or routes matched across the linked scans.</div>';
+  let out = "";
+  if (r.edges.length) {
+    const ids = {}; let n = 0;
+    const nid = m => (ids[m] !== undefined ? ids[m] : (ids[m] = "f" + (n++)));
+    const lines = ["flowchart LR"];
+    r.edges.forEach(e => {
+      lines.push(`  ${nid(e.from_module)}["${esc(e.from_module)}"] -->|${esc(e.method + " " + e.path)}| ${nid(e.to_module)}["${esc(e.to_module)}"]`);
+    });
+    out += '<div class="mermaid">' + lines.join("\n") + "</div>";
+    out += '<div class="spec-field">Calls matched to endpoints (' + r.edges.length + ")</div>";
+    out += r.edges.map(e => `<div class="cov-ev">• <b>${esc(e.from_module)}</b> → <b>${esc(e.to_module)}</b> &nbsp;<code>${esc(e.method)} ${esc(e.path)}</code></div>`).join("");
+  }
+  if (r.unmatched.length) {
+    out += '<div class="spec-field">Calls to endpoints no linked project serves (' + r.unmatched.length + ")</div>";
+    out += r.unmatched.map(u => `<div class="cov-ev">• <code>${esc(u.method)} ${esc(u.path)}</code> from ${esc(u.from_module)}</div>`).join("");
+  }
+  return out;
+}
+function renderMermaidIn(el) {
+  const nodes = el.querySelectorAll(".mermaid");
+  try { if (nodes.length && window.mermaid) mermaid.run({ nodes }); } catch (_) {}
 }
 $("recBack").onclick = () => { showSpecList(); loadSpecList(); };
 $("recRun").onclick = async () => {

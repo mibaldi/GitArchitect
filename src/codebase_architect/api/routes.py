@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from codebase_architect.api.dashboard import INDEX_HTML
 from codebase_architect.api.schemas import (
+    ApiFlowResponse,
     ArchitectureResponse,
     CodeModelResponse,
     DocumentationResponse,
@@ -29,6 +30,7 @@ from codebase_architect.api.schemas import (
     ScanRequest,
     ScanStatusResponse,
     SpecSummaryResponse,
+    api_flow_to_response,
     reconciliation_to_response,
     spec_payload_to_domain,
     spec_summary,
@@ -45,6 +47,8 @@ from codebase_architect.application.services.scan_service import (
     ScanStatus,
 )
 from codebase_architect.application.services.spec_service import SpecService
+from codebase_architect.domain.services.api_match import ScanSurface, match_api_flows
+from codebase_architect.domain.services.http_flows import collect_http
 from codebase_architect.domain.services.reconcile import reconcile_spec
 from codebase_architect.infrastructure.export.zip_archive import zip_directory
 from codebase_architect.shared.errors import NotFoundError
@@ -332,3 +336,47 @@ def reconcile(
     )
     specs.link_scan(spec_id, scan_id)  # remember the spec was reconciled here
     return reconciliation_to_response(report)
+
+
+@router.post("/specs/{spec_id}/scans/{scan_id}", response_model=FunctionalSpecResponse)
+def link_scan(
+    spec_id: str, scan_id: str, specs: SpecService = Depends(get_spec_service)
+) -> FunctionalSpecResponse:
+    """Add a scan to a spec's project group (for cross-project flows)."""
+    try:
+        return spec_to_response(specs.link_scan(spec_id, scan_id))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/specs/{spec_id}/scans/{scan_id}", response_model=FunctionalSpecResponse)
+def unlink_scan(
+    spec_id: str, scan_id: str, specs: SpecService = Depends(get_spec_service)
+) -> FunctionalSpecResponse:
+    try:
+        return spec_to_response(specs.unlink_scan(spec_id, scan_id))
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/specs/{spec_id}/api-flow", response_model=ApiFlowResponse)
+def api_flow(
+    spec_id: str,
+    specs: SpecService = Depends(get_spec_service),
+    scans: ScanService = Depends(get_service),
+) -> ApiFlowResponse:
+    """Cross-project HTTP call graph over the scans linked to a spec."""
+    try:
+        spec = specs.get(spec_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    surfaces: list[ScanSurface] = []
+    for sid in spec.linked_scan_ids:
+        try:
+            job = scans.get(sid)
+        except NotFoundError:
+            continue
+        if job.status is ScanStatus.DONE and job.result is not None:
+            routes, calls = collect_http(job.result.code_model)
+            surfaces.append(ScanSurface(sid, tuple(routes), tuple(calls)))
+    return api_flow_to_response(spec_id, match_api_flows(surfaces))

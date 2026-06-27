@@ -12,6 +12,7 @@ from codebase_architect.domain.model.functional_spec import (
     FunctionalSpec,
     SpecFeature,
 )
+from codebase_architect.domain.model.http_flow import ApiFlowGraph
 from codebase_architect.domain.model.reconciliation import ReconciliationReport
 from codebase_architect.shared.redaction import redact_url_credentials
 
@@ -348,6 +349,55 @@ class ReconciliationResponse(BaseModel):
     missing: int
     coverage: list[FeatureCoverageSchema]
     undocumented_entrypoints: list[str]
+
+
+class ApiFlowEdgeSchema(BaseModel):
+    method: str
+    path: str
+    from_scan: str
+    from_module: str
+    to_scan: str
+    to_module: str
+    handler: str
+
+
+class UnmatchedCallSchema(BaseModel):
+    method: str
+    path: str
+    from_scan: str
+    from_module: str
+
+
+class ApiFlowResponse(BaseModel):
+    spec_id: str
+    scans: list[str]
+    edges: list[ApiFlowEdgeSchema]
+    unmatched: list[UnmatchedCallSchema]
+
+
+def api_flow_to_response(spec_id: str, graph: ApiFlowGraph) -> ApiFlowResponse:
+    return ApiFlowResponse(
+        spec_id=spec_id,
+        scans=list(graph.scans),
+        edges=[
+            ApiFlowEdgeSchema(
+                method=e.method,
+                path=e.path,
+                from_scan=e.from_scan,
+                from_module=e.from_module,
+                to_scan=e.to_scan,
+                to_module=e.to_module,
+                handler=e.handler,
+            )
+            for e in graph.edges
+        ],
+        unmatched=[
+            UnmatchedCallSchema(
+                method=u.method, path=u.path, from_scan=u.from_scan, from_module=u.from_module
+            )
+            for u in graph.unmatched
+        ],
+    )
 
 
 def reconciliation_to_response(report: ReconciliationReport) -> ReconciliationResponse:
