@@ -6,7 +6,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     CA_DATA_DIR=/data \
     CA_WORKSPACES_DIR=/workspaces \
-    CA_LOG_JSON=true
+    CA_LOG_JSON=true \
+    CA_PORT=47800
 
 # git is an optional capability (remote Git sources); everything else works without it.
 RUN apt-get update \
@@ -27,11 +28,13 @@ RUN useradd --create-home app \
     && chown -R app:app /data /workspaces
 USER app
 
-# Non-standard port to avoid clashing with other services on the host.
+# Internal listen port. Non-standard default to avoid clashing with other
+# services; override with CA_PORT at runtime (the deploy compose's CONTAINER_PORT).
 EXPOSE 47800
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request,sys; \
-sys.exit(0 if urllib.request.urlopen('http://localhost:47800/health').status==200 else 1)"
+    CMD python -c "import os,urllib.request,sys; p=os.environ.get('CA_PORT','47800'); \
+sys.exit(0 if urllib.request.urlopen(f'http://localhost:{p}/health').status==200 else 1)"
 
-CMD ["architect", "serve", "--host", "0.0.0.0", "--port", "47800"]
+# Shell form so ${CA_PORT} is expanded at container start.
+CMD architect serve --host 0.0.0.0 --port "${CA_PORT}"

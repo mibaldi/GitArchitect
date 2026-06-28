@@ -1,0 +1,37 @@
+# Deploy stack for Portainer — pulls the prebuilt image from GHCR (no build on the VPS).
+#
+# Publish first with:  git tag v1.0.0 && git push origin v1.0.0
+# -> the `release` workflow pushes ghcr.io/mibaldi/git-architect:1.0.0
+#
+# Portainer: Stacks -> Add stack -> name "git-architect" -> paste this file ->
+# set the variables (see deploy/.env.example) -> Deploy.
+# Then expose on the tailnet:  tailscale serve --bg ${HOST_PORT}
+#
+# NOTE: Git Architect persists scan history + workspaces to disk, so this stack
+# is NOT stateless — the named volumes below keep that data across redeploys.
+services:
+  app:
+    image: ghcr.io/mibaldi/git-architect:${IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      # Internal port the app listens on (matches CONTAINER_PORT in the mapping).
+      CA_PORT: ${CONTAINER_PORT:-47800}
+      CA_AI__DEFAULT_PROVIDER: ${CA_AI__DEFAULT_PROVIDER:-claude}
+      # Provide a key to enable the AI narrative; without it scans run static-only.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      # Host bind = BIND_ADDR:HOST_PORT -> container CONTAINER_PORT.
+      # BIND_ADDR = Tailscale IP -> reachable ONLY from the tailnet. 0.0.0.0 = exposed.
+      # Pick a FREE host port (8088 and 48080 are already taken on the VPS).
+      - "${BIND_ADDR:-100.83.238.95}:${HOST_PORT:-8082}:${CONTAINER_PORT:-47800}"
+    volumes:
+      - ca-data:/data
+      - ca-workspaces:/workspaces
+      # Mount a project to scan it (read-only), then use "/scan/<name>" as the Source:
+      # - ./myproject:/scan/myproject:ro
+
+volumes:
+  ca-data:
+  ca-workspaces:
