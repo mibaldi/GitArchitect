@@ -12,36 +12,36 @@ from __future__ import annotations
 
 from codebase_architect.domain.model.entrypoint import Entrypoint, EntrypointKind
 from codebase_architect.domain.model.feature import Feature, FeatureSource
+from codebase_architect.domain.services.doc_strings import doc_strings
 
-# kind -> (feature name, sentence template). {n} = count, {modules} = module list.
+# kind -> (name string key, description template string key). {n} = count,
+# {modules} = module list. Actual text is looked up per-language via doc_strings.
 _KIND_FEATURE: dict[EntrypointKind, tuple[str, str]] = {
-    EntrypointKind.HTTP_ENDPOINT: (
-        "HTTP API",
-        "Exposes {n} HTTP endpoint(s) across {modules}.",
-    ),
-    EntrypointKind.UI_COMPONENT: (
-        "Web UI",
-        "Renders {n} UI component(s) across {modules}.",
-    ),
+    EntrypointKind.HTTP_ENDPOINT: ("feature_http_api_name", "feature_http_api_desc_template"),
+    EntrypointKind.UI_COMPONENT: ("feature_web_ui_name", "feature_web_ui_desc_template"),
     EntrypointKind.NG_MODULE: (
-        "Web application modules",
-        "Wires {n} application/routing module(s) across {modules}.",
+        "feature_web_app_modules_name",
+        "feature_web_app_modules_desc_template",
     ),
     EntrypointKind.APP_BOOTSTRAP: (
-        "Application bootstrap",
-        "Boots the application from {n} entrypoint(s) in {modules}.",
+        "feature_app_bootstrap_name",
+        "feature_app_bootstrap_desc_template",
     ),
-    EntrypointKind.CLI_MAIN: (
-        "Command-line interface",
-        "Provides {n} command-line entrypoint(s) in {modules}.",
-    ),
+    EntrypointKind.CLI_MAIN: ("feature_cli_name", "feature_cli_desc_template"),
 }
 
 _MAX_MODULES_LISTED = 5
 
 
-def derive_static_features(entrypoints: list[Entrypoint]) -> list[Feature]:
-    """Group entrypoints into a small, grounded list of capabilities."""
+def derive_static_features(
+    entrypoints: list[Entrypoint], *, strings: dict[str, str] | None = None
+) -> list[Feature]:
+    """Group entrypoints into a small, grounded list of capabilities.
+
+    ``strings`` is a resolved ``doc_strings`` table; callers that already hold
+    one pass it through so there is a single source of truth for the locale.
+    """
+    strings = strings if strings is not None else doc_strings("en")
     by_kind: dict[EntrypointKind, list[Entrypoint]] = {}
     for entrypoint in entrypoints:
         by_kind.setdefault(entrypoint.kind, []).append(entrypoint)
@@ -51,7 +51,8 @@ def derive_static_features(entrypoints: list[Entrypoint]) -> list[Feature]:
         group = by_kind.get(kind)
         if not group:
             continue
-        name, template = _KIND_FEATURE[kind]
+        name_key, template_key = _KIND_FEATURE[kind]
+        name, template = strings[name_key], strings[template_key]
         modules = sorted({e.module for e in group})
         description = template.format(n=len(group), modules=_join_modules(modules))
         related = tuple(sorted({e.name for e in group}))

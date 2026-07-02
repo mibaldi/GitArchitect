@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from codebase_architect.application.pipeline.scan_pipeline import ScanResult
@@ -24,6 +26,7 @@ class ScanRequest(BaseModel):
     title: str | None = None
     tags: list[str] = []
     static_only: bool = False
+    language: Literal["en", "es"] = "en"
     ai_provider: str | None = None
     # Optional per-scan AI overrides; never echoed back in any response.
     ai_api_key: str | None = Field(default=None, description="API key for the selected provider")

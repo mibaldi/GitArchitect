@@ -2,7 +2,9 @@
 
 Pure and deterministic: ``generated_at`` is provided by the caller so the same
 inputs always produce the same documentation (important for tests and for
-re-scans that should yield stable diffs).
+re-scans that should yield stable diffs). ``language`` is purely a lookup key
+into :mod:`codebase_architect.domain.services.doc_strings`; no clock/locale
+calls are ever made.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from codebase_architect.domain.model.module import ModuleEdge, ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.services.architecture_rules import analyze_architecture
 from codebase_architect.domain.services.call_graph import build_call_edges
+from codebase_architect.domain.services.doc_strings import doc_strings, normalize_language
 from codebase_architect.domain.services.features_static import derive_static_features
 from codebase_architect.domain.services.http_flows import collect_http
 
@@ -46,20 +49,27 @@ def build_documentation(
     entrypoints: list[Entrypoint],
     narrative: NarrativeReport | None = None,
     findings: list[Finding] | None = None,
+    language: str = "en",
 ) -> Documentation:
+    language = normalize_language(language)
+    strings = doc_strings(language)
     pages = (
-        _overview_page(title, generated_at, base_ref, model, narrative),
-        _architecture_page(architecture, graph),
-        _modules_page(graph),
-        _features_page(narrative, entrypoints),
-        _entrypoints_page(entrypoints),
-        _flows_page(entrypoints, graph, model, narrative),
-        _api_page(model),
-        _dependencies_page(model),
-        _security_page(findings),
+        _overview_page(title, generated_at, base_ref, model, narrative, strings),
+        _architecture_page(architecture, graph, strings),
+        _modules_page(graph, strings),
+        _features_page(narrative, entrypoints, strings),
+        _entrypoints_page(entrypoints, strings),
+        _flows_page(entrypoints, graph, model, narrative, strings),
+        _api_page(model, strings),
+        _dependencies_page(model, strings),
+        _security_page(findings, strings),
     )
     return Documentation(
-        title=title, generated_at=generated_at, base_ref=base_ref, pages=pages
+        title=title,
+        generated_at=generated_at,
+        base_ref=base_ref,
+        pages=pages,
+        language=language,
     )
 
 
@@ -69,111 +79,119 @@ def _overview_page(
     base_ref: str | None,
     model: CodeModel,
     narrative: NarrativeReport | None,
+    strings: dict[str, str],
 ) -> DocPage:
-    meta = f"_Generated at {generated_at}"
     if base_ref:
-        meta += f" · base ref `{base_ref[:12]}`"
-    meta += "._"
+        meta = strings["meta_generated_at_with_ref_template"].format(
+            generated_at=generated_at, base_ref=base_ref[:12]
+        )
+    else:
+        meta = strings["meta_generated_at_template"].format(generated_at=generated_at)
 
     sections: list[DocSection] = [DocSection(body=meta)]
     if narrative and narrative.overview:
-        sections.append(DocSection(heading="Overview", body=narrative.overview))
+        sections.append(DocSection(heading=strings["heading_overview"], body=narrative.overview))
 
     lang_rows = [
         f"| {s.language.value} | {s.files} | {s.loc} |" for s in model.language_breakdown()
     ]
-    languages = _table(["Language", "Files", "LOC"], lang_rows) or "_No recognized source files._"
+    languages = _table(
+        [strings["col_language"], strings["col_files"], strings["col_loc"]], lang_rows
+    ) or strings["no_recognized_source_files"]
 
     stack_lines = [
         f"- **{s.name}**{_v(s.version)} — {s.category.value} (`{s.evidence}`)" for s in model.stacks
     ]
-    stacks = "\n".join(stack_lines) or "_None detected._"
+    stacks = "\n".join(stack_lines) or strings["none_detected"]
 
     totals = (
-        f"- Parsed files: **{len(model.parsed_files)}**\n"
-        f"- Symbols: **{model.symbol_count}**\n"
-        f"- Lines of code: **{model.total_loc}**\n"
-        f"- Dependencies: **{len(model.dependencies)}**"
+        f"- {strings['totals_parsed_files']}: **{len(model.parsed_files)}**\n"
+        f"- {strings['totals_symbols']}: **{model.symbol_count}**\n"
+        f"- {strings['totals_lines_of_code']}: **{model.total_loc}**\n"
+        f"- {strings['totals_dependencies']}: **{len(model.dependencies)}**"
     )
 
-    sections.append(DocSection(heading="Languages", body=languages))
-    sections.append(DocSection(heading="Technology stack", body=stacks))
-    sections.append(DocSection(heading="Totals", body=totals))
+    sections.append(DocSection(heading=strings["heading_languages"], body=languages))
+    sections.append(DocSection(heading=strings["heading_technology_stack"], body=stacks))
+    sections.append(DocSection(heading=strings["heading_totals"], body=totals))
     return DocPage(slug="README", title=title, sections=tuple(sections))
 
 
 def _features_page(
-    narrative: NarrativeReport | None, entrypoints: list[Entrypoint]
+    narrative: NarrativeReport | None,
+    entrypoints: list[Entrypoint],
+    strings: dict[str, str],
 ) -> DocPage:
     # Prefer the AI catalog; fall back to a deterministic one derived from
     # entrypoints so the page is never empty on a static-only scan.
     ai_features = list(narrative.features) if narrative else []
-    features = ai_features or derive_static_features(entrypoints)
+    features = ai_features or derive_static_features(entrypoints, strings=strings)
 
     sections: list[DocSection] = []
     if not ai_features and features:
-        sections.append(
-            DocSection(
-                body=(
-                    "_Derived statically from entrypoints. Run with an AI provider "
-                    "(without `--static-only`) to enrich these descriptions._"
-                )
-            )
-        )
+        sections.append(DocSection(body=strings["static_features_hint"]))
 
     if not features:
-        body = "_No functionalities were derived (no entrypoints detected)._"
+        body = strings["no_functionalities"]
     else:
         chunks: list[str] = []
         for feature in features:
-            badge = "" if feature.source.value == "ai" else " _(static)_"
+            badge = "" if feature.source.value == "ai" else strings["static_badge"]
             chunks.append(f"### {feature.name}{badge}")
             chunks.append(feature.description)
             if feature.related:
                 refs = ", ".join(f"`{r}`" for r in feature.related)
-                chunks.append(f"_Related: {refs}_")
+                chunks.append(strings["related_prefix_template"].format(refs=refs))
             chunks.append("")
         body = "\n".join(chunks).strip()
-    sections.append(DocSection(heading="Features", body=body))
-    return DocPage(slug="features", title="Functionalities", sections=tuple(sections))
+    sections.append(DocSection(heading=strings["heading_features"], body=body))
+    return DocPage(
+        slug="features", title=strings["title_functionalities"], sections=tuple(sections)
+    )
 
 
-def _architecture_page(architecture: Architecture, graph: ModuleGraph) -> DocPage:
+def _architecture_page(
+    architecture: Architecture, graph: ModuleGraph, strings: dict[str, str]
+) -> DocPage:
     sections: list[DocSection] = []
     report = analyze_architecture(architecture, graph)
     grouped = architecture.by_layer()
     body_lines: list[str] = []
     for layer in architecture.layers_present():
         components = grouped[layer]
-        body_lines.append(f"### {_layer_title(layer)} ({len(components)})")
+        body_lines.append(f"### {_layer_title(layer, strings)} ({len(components)})")
         for component in sorted(components, key=lambda c: c.module_id):
             body_lines.append(f"- `{component.module_id}` — _{component.evidence}_")
         body_lines.append("")
-    layers_body = "\n".join(body_lines).strip() or "_No modules to classify._"
-    sections.append(DocSection(heading="Layers", body=layers_body))
+    layers_body = "\n".join(body_lines).strip() or strings["no_modules_to_classify"]
+    sections.append(DocSection(heading=strings["heading_layers"], body=layers_body))
 
-    diagram = _layered_graph_diagram(graph, architecture, report)
+    diagram = _layered_graph_diagram(graph, architecture, report, strings)
     sections.append(
         DocSection(
-            heading="Module dependencies",
-            body=_graph_caption(graph),
+            heading=strings["heading_module_dependencies"],
+            body=_graph_caption(graph, strings),
             diagram=diagram,
         )
     )
     sections.append(
-        DocSection(heading="Dependency rules", body=_dependency_rules_body(report))
+        DocSection(
+            heading=strings["heading_dependency_rules"],
+            body=_dependency_rules_body(report, strings),
+        )
     )
-    return DocPage(slug="architecture", title="Architecture", sections=tuple(sections))
+    return DocPage(
+        slug="architecture", title=strings["title_architecture"], sections=tuple(sections)
+    )
 
 
-def _dependency_rules_body(report: ArchitectureReport) -> str:
+def _dependency_rules_body(report: ArchitectureReport, strings: dict[str, str]) -> str:
     if report.is_clean:
-        return "✓ No layering violations or dependency cycles detected."
+        return strings["no_layering_violations"]
     chunks: list[str] = []
     if report.violations:
         chunks.append(
-            f"**{len(report.violations)} layering violation(s)** "
-            "(an inner layer depends on an outer one):"
+            strings["layering_violations_count_template"].format(count=len(report.violations))
         )
         for v in report.violations:
             chunks.append(
@@ -182,13 +200,13 @@ def _dependency_rules_body(report: ArchitectureReport) -> str:
             )
         chunks.append("")
     if report.cycles:
-        chunks.append(f"**{len(report.cycles)} dependency cycle(s):**")
+        chunks.append(strings["dependency_cycles_count_template"].format(count=len(report.cycles)))
         for cycle in report.cycles:
             chunks.append("- " + " ↔ ".join(f"`{m}`" for m in cycle.modules))
     return "\n".join(chunks).strip()
 
 
-def _modules_page(graph: ModuleGraph) -> DocPage:
+def _modules_page(graph: ModuleGraph, strings: dict[str, str]) -> DocPage:
     rows: list[str] = []
     for module in graph.modules:
         langs = ", ".join(sorted(lang.value for lang in module.languages))
@@ -198,18 +216,26 @@ def _modules_page(graph: ModuleGraph) -> DocPage:
             f"| {module.loc} | {langs} | {deps} |"
         )
     table = _table(
-        ["Module", "Files", "Symbols", "LOC", "Languages", "Depends on"], rows
-    ) or "_No modules._"
+        [
+            strings["col_module"],
+            strings["col_files"],
+            strings["col_symbols"],
+            strings["col_loc"],
+            strings["col_languages"],
+            strings["col_depends_on"],
+        ],
+        rows,
+    ) or strings["no_modules"]
     return DocPage(
         slug="modules",
-        title="Modules",
-        sections=(DocSection(heading="Modules", body=table),),
+        title=strings["title_modules"],
+        sections=(DocSection(heading=strings["heading_modules"], body=table),),
     )
 
 
-def _entrypoints_page(entrypoints: list[Entrypoint]) -> DocPage:
+def _entrypoints_page(entrypoints: list[Entrypoint], strings: dict[str, str]) -> DocPage:
     if not entrypoints:
-        body = "_No entrypoints detected._"
+        body = strings["no_entrypoints_detected"]
     else:
         by_kind: dict[str, list[Entrypoint]] = {}
         for ep in entrypoints:
@@ -223,8 +249,8 @@ def _entrypoints_page(entrypoints: list[Entrypoint]) -> DocPage:
         body = "\n".join(chunks).strip()
     return DocPage(
         slug="entrypoints",
-        title="Entrypoints",
-        sections=(DocSection(heading="Entrypoints", body=body),),
+        title=strings["title_entrypoints"],
+        sections=(DocSection(heading=strings["heading_entrypoints"], body=body),),
     )
 
 
@@ -233,18 +259,12 @@ def _flows_page(
     graph: ModuleGraph,
     model: CodeModel,
     narrative: NarrativeReport | None,
+    strings: dict[str, str],
 ) -> DocPage:
     # Trace each entrypoint through what its module transitively depends on or
     # calls, combining the import graph with the (name-resolved) call graph.
     adjacency = _combined_adjacency(graph, build_call_edges(model))
-    sections: list[DocSection] = [
-        DocSection(
-            body=(
-                "Flows traced from each entrypoint through the modules it "
-                "transitively depends on or calls."
-            )
-        )
-    ]
+    sections: list[DocSection] = [DocSection(body=strings["flows_intro"])]
     flow_text = narrative.flows if narrative else {}
     shown = 0
     for ep in entrypoints:
@@ -264,8 +284,8 @@ def _flows_page(
         )
         shown += 1
     if shown == 0:
-        sections.append(DocSection(body="_No multi-module flows detected._"))
-    return DocPage(slug="flows", title="Flows", sections=tuple(sections))
+        sections.append(DocSection(body=strings["no_multi_module_flows"]))
+    return DocPage(slug="flows", title=strings["title_flows"], sections=tuple(sections))
 
 
 def _combined_adjacency(
@@ -300,32 +320,38 @@ def _flow_subgraph(start: str, adjacency: dict[str, list[str]]) -> list[tuple[st
     )
 
 
-def _api_page(model: CodeModel) -> DocPage:
+def _api_page(model: CodeModel, strings: dict[str, str]) -> DocPage:
     routes, calls = collect_http(model)
     sections: list[DocSection] = []
 
     route_rows = [f"| `{r.method}` | `{r.path}` | `{r.module}` | {r.handler} |" for r in routes]
-    routes_body = _table(["Method", "Path", "Module", "Handler"], route_rows) or (
-        "_No exposed HTTP endpoints detected (Spring / FastAPI supported)._"
-    )
-    sections.append(DocSection(heading="Exposed endpoints", body=routes_body))
+    routes_body = _table(
+        [
+            strings["col_method"],
+            strings["col_path"],
+            strings["col_module"],
+            strings["col_handler"],
+        ],
+        route_rows,
+    ) or strings["no_http_endpoints"]
+    sections.append(DocSection(heading=strings["heading_exposed_endpoints"], body=routes_body))
 
     call_rows = [f"| `{c.method}` | `{c.path}` | `{c.module}` |" for c in calls]
-    calls_body = _table(["Method", "Path", "From module"], call_rows) or (
-        "_No outbound HTTP calls detected (Angular HttpClient / fetch / axios supported)._"
-    )
-    sections.append(DocSection(heading="Outbound calls", body=calls_body))
-    return DocPage(slug="api", title="API surface", sections=tuple(sections))
+    calls_body = _table(
+        [strings["col_method"], strings["col_path"], strings["col_from_module"]], call_rows
+    ) or strings["no_outbound_calls"]
+    sections.append(DocSection(heading=strings["heading_outbound_calls"], body=calls_body))
+    return DocPage(slug="api", title=strings["title_api"], sections=tuple(sections))
 
 
-def _dependencies_page(model: CodeModel) -> DocPage:
+def _dependencies_page(model: CodeModel, strings: dict[str, str]) -> DocPage:
     by_manifest: dict[str, list[str]] = {}
     for dep in model.dependencies:
         version = f"@{dep.version}" if dep.version else ""
         scope = f" ({dep.scope})" if dep.scope else ""
         by_manifest.setdefault(dep.manifest, []).append(f"- `{dep.name}{version}`{scope}")
     if not by_manifest:
-        body = "_No external dependencies detected._"
+        body = strings["no_external_dependencies"]
     else:
         chunks = []
         for manifest in sorted(by_manifest):
@@ -335,21 +361,24 @@ def _dependencies_page(model: CodeModel) -> DocPage:
         body = "\n".join(chunks).strip()
     return DocPage(
         slug="dependencies",
-        title="Dependencies",
-        sections=(DocSection(heading="External dependencies", body=body),),
+        title=strings["title_dependencies"],
+        sections=(DocSection(heading=strings["heading_external_dependencies"], body=body),),
     )
 
 
-def _security_page(findings: list[Finding] | None) -> DocPage:
+def _security_page(findings: list[Finding] | None, strings: dict[str, str]) -> DocPage:
     if findings is None:
-        body = "_Secret scanning was not run._"
+        body = strings["secret_scan_not_run"]
     elif not findings:
-        body = "_No secrets detected._"
+        body = strings["no_secrets_detected"]
     else:
         by_rule: dict[str, list[Finding]] = {}
         for finding in findings:
             by_rule.setdefault(finding.rule, []).append(finding)
-        chunks = [f"**{len(findings)}** potential secret(s) found (values redacted):", ""]
+        chunks = [
+            strings["secrets_found_count_template"].format(count=len(findings)),
+            "",
+        ]
         for rule in sorted(by_rule):
             chunks.append(f"### {rule} ({len(by_rule[rule])})")
             for finding in sorted(by_rule[rule], key=lambda f: (f.path, f.line)):
@@ -358,8 +387,8 @@ def _security_page(findings: list[Finding] | None) -> DocPage:
         body = "\n".join(chunks).strip()
     return DocPage(
         slug="security",
-        title="Security",
-        sections=(DocSection(heading="Secret scan", body=body),),
+        title=strings["title_security"],
+        sections=(DocSection(heading=strings["heading_secret_scan"], body=body),),
     )
 
 
@@ -367,7 +396,10 @@ def _security_page(findings: list[Finding] | None) -> DocPage:
 
 
 def _layered_graph_diagram(
-    graph: ModuleGraph, architecture: Architecture, report: ArchitectureReport
+    graph: ModuleGraph,
+    architecture: Architecture,
+    report: ArchitectureReport,
+    strings: dict[str, str],
 ) -> MermaidDiagram:
     """Module graph grouped into a mermaid subgraph per layer.
 
@@ -391,7 +423,7 @@ def _layered_graph_diagram(
         members = by_layer.get(layer)
         if not members:
             continue
-        lines.append(f"    subgraph {_layer_title(layer)}")
+        lines.append(f"    subgraph {_layer_title(layer, strings)}")
         for module_id in members:
             lines.append(f'        {node_id[module_id]}["{_escape(module_id)}"]')
         lines.append("    end")
@@ -417,12 +449,16 @@ def _flow_diagram(entrypoint: Entrypoint, edges: list[tuple[str, str]]) -> Merma
     return MermaidDiagram(title=entrypoint.name, code="\n".join(lines))
 
 
-def _graph_caption(graph: ModuleGraph) -> str:
+def _graph_caption(graph: ModuleGraph, strings: dict[str, str]) -> str:
     shown = min(len(graph.modules), _MAX_GRAPH_NODES)
     note = ""
     if len(graph.modules) > _MAX_GRAPH_NODES:
-        note = f" (showing first {shown} of {len(graph.modules)})"
-    return f"{len(graph.modules)} modules, {len(graph.edges)} internal dependencies{note}."
+        note = strings["graph_caption_note_template"].format(
+            shown=shown, total=len(graph.modules)
+        )
+    return strings["graph_caption_template"].format(
+        modules=len(graph.modules), edges=len(graph.edges), note=note
+    )
 
 
 # -- small formatting utilities --------------------------------------------
@@ -436,8 +472,8 @@ def _table(headers: list[str], rows: list[str]) -> str:
     return "\n".join([head, sep, *rows])
 
 
-def _layer_title(layer: Layer) -> str:
-    return layer.value.capitalize()
+def _layer_title(layer: Layer, strings: dict[str, str]) -> str:
+    return strings.get(f"layer_{layer.value}", layer.value.capitalize())
 
 
 def _v(version: str | None) -> str:

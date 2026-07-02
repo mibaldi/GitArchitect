@@ -20,6 +20,7 @@ from codebase_architect.domain.model.module import ModuleGraph
 from codebase_architect.domain.model.narrative import NarrativeReport
 from codebase_architect.domain.ports.ai_provider import AIProvider
 from codebase_architect.domain.ports.narrative_cache import NarrativeCache
+from codebase_architect.domain.services.doc_strings import doc_strings
 from codebase_architect.shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,9 +57,10 @@ class GenerateNarrativeUseCase:
         graph: ModuleGraph,
         architecture: Architecture,
         entrypoints: list[Entrypoint],
+        language: str = "en",
     ) -> NarrativeReport:
         allowed = graph.module_ids() | {e.name for e in entrypoints}
-        prompt = _build_prompt(model, graph, architecture, entrypoints)
+        prompt = _build_prompt(model, graph, architecture, entrypoints, language)
 
         cache_key = _cache_key(self._provider.fingerprint(), prompt)
         if self._cache is not None:
@@ -105,6 +107,7 @@ def _build_prompt(
     graph: ModuleGraph,
     architecture: Architecture,
     entrypoints: list[Entrypoint],
+    language: str,
 ) -> str:
     layer_of = {c.module_id: c.layer.value for c in architecture.components}
     modules = "\n".join(
@@ -115,6 +118,7 @@ def _build_prompt(
     edges = "\n".join(f"- {e.source} -> {e.target}" for e in graph.edges) or "(none)"
     eps = "\n".join(f"- {e.name} [{e.kind.value}] in {e.file}" for e in entrypoints) or "(none)"
     stacks = ", ".join(s.name for s in model.stacks) or "(none)"
+    language_instruction = doc_strings(language)["narrative_language_instruction"]
 
     return (
         f"Technology stacks: {stacks}\n\n"
@@ -131,7 +135,8 @@ def _build_prompt(
         'invocation flows through the modules"}]\n'
         "}\n"
         "Base every statement on the facts above. Reference only the module ids and "
-        "entrypoint names listed."
+        "entrypoint names listed. "
+        f"{language_instruction}"
     )
 
 

@@ -68,3 +68,11 @@ def test_renderer_emits_single_html_with_mermaid() -> None:
 
 def test_plugin_is_resolved_by_the_registry() -> None:
     assert isinstance(build_renderer("html"), HtmlSiteRenderer)
+
+
+def test_renderer_uses_documentation_language_for_html_lang_attribute() -> None:
+    docs = Documentation(
+        title="Demo", generated_at="t", base_ref=None, pages=(), language="es"
+    )
+    content = HtmlSiteRenderer().render(docs)[0].content
+    assert '<html lang="es">' in content

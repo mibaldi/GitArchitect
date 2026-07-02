@@ -275,6 +275,11 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
         <input type="checkbox" id="staticOnly" checked>
         <label for="staticOnly">Static only (no AI narrative)</label>
       </div>
+      <label for="language">Docs language</label>
+      <select id="language">
+        <option value="en" selected>English</option>
+        <option value="es">Español</option>
+      </select>
       <div class="ai-chip" id="aiChip"><span class="dot"></span><span id="aiChipText">AI off</span></div>
       <button class="btn" type="submit" id="runBtn">Run scan</button>
       <div class="err" id="formErr"></div>
@@ -705,6 +710,8 @@ function updateAIChip() {
 $("staticOnly").onchange = () => { SET("staticOnly", $("staticOnly").checked ? "1" : "0"); updateAIChip(); };
 if (LS("staticOnly")) $("staticOnly").checked = LS("staticOnly") === "1";
 updateAIChip();
+$("language").onchange = () => SET("language", $("language").value);
+if (LS("language")) $("language").value = LS("language");
 
 /* api helper */
 async function api(path, opts) {
@@ -754,6 +761,7 @@ $("scanForm").onsubmit = async e => {
   e.preventDefault();
   $("formErr").textContent = "";
   const staticOnly = $("staticOnly").checked;
+  const language = $("language").value;
   const title = $("title").value.trim();
   const tags = $("tags").value.split(",").map(t => t.trim()).filter(Boolean);
   const location = $("location").value.trim();
@@ -771,6 +779,7 @@ $("scanForm").onsubmit = async e => {
       if (title) fd.append("title", title);
       if (tags.length) fd.append("tags", tags.join(","));
       fd.append("static_only", staticOnly);
+      fd.append("language", language);
       if (!staticOnly) {
         if (LS("provider")) fd.append("ai_provider", LS("provider"));
         if (LS("apiKey")) fd.append("ai_api_key", LS("apiKey"));
@@ -784,6 +793,7 @@ $("scanForm").onsubmit = async e => {
         title: title || null,
         tags,
         static_only: staticOnly,
+        language,
         ai_provider: staticOnly ? null : (LS("provider") || null),
         ai_api_key: staticOnly ? null : (LS("apiKey") || null),
         ai_base_url: staticOnly ? null : (LS("baseUrl") || null),

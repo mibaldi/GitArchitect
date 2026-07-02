@@ -29,6 +29,7 @@ from codebase_architect.application.registries.renderer_registry import build_re
 from codebase_architect.application.registries.source_resolver import SourceProviderResolver
 from codebase_architect.application.use_cases.build_code_model import BuildCodeModelUseCase
 from codebase_architect.application.use_cases.import_source import ImportSourceUseCase
+from codebase_architect.domain.services.doc_strings import SUPPORTED_LANGUAGES
 from codebase_architect.infrastructure.cache.file_narrative_cache import FileNarrativeCache
 from codebase_architect.infrastructure.detection.language_detector import ExtensionLanguageDetector
 from codebase_architect.infrastructure.detection.manifest_detector import CompositeManifestDetector
@@ -90,6 +91,9 @@ def scan(
     static_only: bool = typer.Option(
         False, "--static-only", help="Skip the AI narrative pass (deterministic output only)"
     ),
+    language: str | None = typer.Option(
+        None, "--language", help="Documentation language: 'en' or 'es' (default: from config)"
+    ),
     ai_provider: str | None = typer.Option(
         None, "--ai-provider", help="AI provider for the narrative (default: from config)"
     ),
@@ -125,6 +129,13 @@ def scan(
     """
     settings = get_settings()
     use_static_only = static_only or settings.scan.static_only
+    use_language = language or settings.scan.language
+    if use_language not in SUPPORTED_LANGUAGES:
+        supported = ", ".join(sorted(SUPPORTED_LANGUAGES))
+        raise typer.BadParameter(
+            f"unsupported language '{use_language}' (supported: {supported})",
+            param_hint="--language",
+        )
     provider = build_ai_provider(
         ai_provider or settings.ai.default_provider,
         api_key=ai_api_key,
@@ -171,6 +182,7 @@ def scan(
             generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
             out_dir=out,
             static_only=use_static_only,
+            language=use_language,
             use_gitignore=not no_gitignore,
             exclude_globs=tuple(exclude),
             include_globs=tuple(include),

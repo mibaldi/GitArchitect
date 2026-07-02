@@ -6,6 +6,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -134,6 +135,7 @@ def create_scan(
             title=body.title,
             tags=tuple(body.tags),
             static_only=body.static_only,
+            language=body.language,
             ai_provider=body.ai_provider,
             ai_api_key=body.ai_api_key,
             ai_base_url=body.ai_base_url,
@@ -158,6 +160,7 @@ async def create_scan_upload(
     title: str | None = Form(default=None),
     tags: str | None = Form(default=None),  # comma-separated
     static_only: bool = Form(default=False),
+    language: Literal["en", "es"] = Form(default="en"),
     ai_provider: str | None = Form(default=None),
     ai_api_key: str | None = Form(default=None),
     ai_base_url: str | None = Form(default=None),
@@ -180,6 +183,7 @@ async def create_scan_upload(
             title=title or _strip_suffix(filename, suffix),
             tags=_split_tags(tags),
             static_only=static_only,
+            language=language,
             ai_provider=ai_provider,
             ai_api_key=ai_api_key,
             ai_base_url=ai_base_url,

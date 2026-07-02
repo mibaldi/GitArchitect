@@ -45,6 +45,7 @@ class Documentation:
     generated_at: str
     base_ref: str | None
     pages: tuple[DocPage, ...] = ()
+    language: str = "en"
 
 
 @dataclass(frozen=True)

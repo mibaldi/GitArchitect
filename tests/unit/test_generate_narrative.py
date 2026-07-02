@@ -112,3 +112,46 @@ def test_prompt_is_grounded_in_static_facts() -> None:
     # The prompt carries real module ids and entrypoint names, not source code.
     assert "com.demo.web" in provider.last_prompt
     assert "GreetController" in provider.last_prompt
+
+
+def test_prompt_defaults_to_english_instruction() -> None:
+    model, graph, architecture, entrypoints = _fixture()
+    provider = FakeAIProvider('{"overview":"x","features":[],"flows":[]}')
+    GenerateNarrativeUseCase(provider).execute(
+        model=model, graph=graph, architecture=architecture, entrypoints=entrypoints
+    )
+    assert provider.last_prompt is not None
+    assert "Write all prose values in English." in provider.last_prompt
+
+
+def test_prompt_carries_spanish_instruction_when_requested() -> None:
+    model, graph, architecture, entrypoints = _fixture()
+    provider = FakeAIProvider('{"overview":"x","features":[],"flows":[]}')
+    GenerateNarrativeUseCase(provider).execute(
+        model=model,
+        graph=graph,
+        architecture=architecture,
+        entrypoints=entrypoints,
+        language="es",
+    )
+    assert provider.last_prompt is not None
+    assert "Escribe todos los valores de prosa en español." in provider.last_prompt
+
+
+def test_cache_key_differs_between_languages() -> None:
+    model, graph, architecture, entrypoints = _fixture()
+    provider_en = FakeAIProvider('{"overview":"x","features":[],"flows":[]}')
+    provider_es = FakeAIProvider('{"overview":"x","features":[],"flows":[]}')
+    GenerateNarrativeUseCase(provider_en).execute(
+        model=model, graph=graph, architecture=architecture, entrypoints=entrypoints
+    )
+    GenerateNarrativeUseCase(provider_es).execute(
+        model=model,
+        graph=graph,
+        architecture=architecture,
+        entrypoints=entrypoints,
+        language="es",
+    )
+    # The cache key hashes the prompt text, so the language instruction alone
+    # is enough to produce different prompts (and thus different cache keys).
+    assert provider_en.last_prompt != provider_es.last_prompt

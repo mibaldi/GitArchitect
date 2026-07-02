@@ -367,6 +367,43 @@ def test_credentials_accepted_but_never_echoed(client: TestClient, project: Path
     assert "100.9.9.9" not in status
 
 
+def test_scan_request_accepts_spanish_language_and_localizes_docs(
+    client: TestClient, project: Path
+) -> None:
+    response = client.post(
+        "/scans", json={"location": str(project), "static_only": True, "language": "es"}
+    )
+    assert response.status_code == 202
+    scan_id = response.json()["id"]
+
+    docs = client.get(f"/scans/{scan_id}/documentation").json()
+    titles = {p["slug"]: p["title"] for p in docs["pages"]}
+    assert titles["architecture"] == "Arquitectura"
+
+
+def test_scan_request_defaults_to_english_language(client: TestClient, project: Path) -> None:
+    scan_id = _submit(client, project)
+    docs = client.get(f"/scans/{scan_id}/documentation").json()
+    titles = {p["slug"]: p["title"] for p in docs["pages"]}
+    assert titles["architecture"] == "Architecture"
+
+
+def test_scan_request_rejects_invalid_language(client: TestClient, project: Path) -> None:
+    response = client.post(
+        "/scans", json={"location": str(project), "static_only": True, "language": "de"}
+    )
+    assert response.status_code == 422
+
+
+def test_scan_upload_rejects_invalid_language(client: TestClient) -> None:
+    response = client.post(
+        "/scans/upload",
+        files={"file": ("code.zip", b"not-a-real-zip", "application/zip")},
+        data={"language": "de"},
+    )
+    assert response.status_code == 422
+
+
 def test_list_scans(client: TestClient, project: Path) -> None:
     scan_id = _submit(client, project)
     listed = client.get("/scans").json()

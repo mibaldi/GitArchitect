@@ -48,6 +48,8 @@ class ScanOptions:
     #: Free-form labels (e.g. "frontend", "backend") to group scans into products.
     tags: tuple[str, ...] = ()
     static_only: bool = False
+    #: Language for generated documentation ("en" or "es"); unsupported codes fall back to "en".
+    language: str = "en"
     ai_provider: str | None = None
     # Per-scan AI credentials/endpoint (kept in memory only, never persisted or logged).
     ai_api_key: str | None = None
@@ -156,6 +158,7 @@ class ScanService:
                 generated_at=self._clock(),
                 out_dir=docs_dir,
                 static_only=options.static_only,
+                language=options.language,
             )
             job.result = result
             job.docs_dir = docs_dir

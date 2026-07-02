@@ -49,6 +49,8 @@ class GitSettings(BaseModel):
 class ScanSettings(BaseModel):
     static_only: bool = False
     default_out: str = "./docs-output"
+    #: Language for generated documentation ("en" or "es"); unsupported codes fall back to "en".
+    language: str = "en"
 
 
 class Settings(BaseSettings):

@@ -39,8 +39,9 @@ class HtmlSiteRenderer(DocRenderer):
             for page in documentation.pages
         )
         body = "\n".join(self._page(page) for page in documentation.pages)
+        lang = html.escape(documentation.language or "en")
         page = (
-            "<!doctype html>\n<html lang=\"en\">\n<head>\n"
+            f'<!doctype html>\n<html lang="{lang}">\n<head>\n'
             '<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f"<title>{html.escape(documentation.title)}</title>\n"

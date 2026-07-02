@@ -77,6 +77,7 @@ class ScanPipeline:
         generated_at: str,
         out_dir: Path | None,
         static_only: bool = False,
+        language: str = "en",
         use_gitignore: bool = True,
         exclude_globs: tuple[str, ...] = (),
         include_globs: tuple[str, ...] = (),
@@ -93,7 +94,9 @@ class ScanPipeline:
         entrypoints = detect_entrypoints(model)
         findings = self._secret_scanner.scan(workspace) if self._secret_scanner else []
 
-        narrative = self._maybe_narrate(model, graph, architecture, entrypoints, static_only)
+        narrative = self._maybe_narrate(
+            model, graph, architecture, entrypoints, static_only, language
+        )
 
         documentation = build_documentation(
             title=project_title,
@@ -105,6 +108,7 @@ class ScanPipeline:
             entrypoints=entrypoints,
             narrative=narrative,
             findings=findings if self._secret_scanner else None,
+            language=language,
         )
 
         bundle: DocumentationBundle | None = None
@@ -131,6 +135,7 @@ class ScanPipeline:
         architecture: Architecture,
         entrypoints: list[Entrypoint],
         static_only: bool,
+        language: str,
     ) -> NarrativeReport | None:
         if static_only or self._ai_provider is None or not self._ai_provider.available():
             return None
@@ -144,4 +149,5 @@ class ScanPipeline:
             graph=graph,
             architecture=architecture,
             entrypoints=entrypoints,
+            language=language,
         )

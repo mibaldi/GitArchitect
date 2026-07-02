@@ -154,6 +154,81 @@ def test_features_page_derives_static_catalog_without_narrative() -> None:
     assert "Derived statically" in body
 
 
+def test_build_documentation_localizes_titles_and_headings_for_spanish() -> None:
+    docs = build_documentation(
+        title="Demo",
+        generated_at="t",
+        base_ref=None,
+        model=CodeModel(),
+        graph=build_module_graph(CodeModel()),
+        architecture=Architecture(),
+        entrypoints=[],
+        language="es",
+    )
+    assert docs.language == "es"
+    by_slug = {p.slug: p for p in docs.pages}
+    assert by_slug["architecture"].title == "Arquitectura"
+    assert by_slug["modules"].title == "Módulos"
+    assert by_slug["features"].title == "Funcionalidades"
+    assert by_slug["entrypoints"].title == "Puntos de entrada"
+    assert by_slug["flows"].title == "Flujos"
+    assert by_slug["api"].title == "Superficie de API"
+    assert by_slug["dependencies"].title == "Dependencias"
+    assert by_slug["security"].title == "Seguridad"
+    files = {f.path: f.content for f in MarkdownMermaidRenderer().render(docs)}
+    assert "## Módulos" in files["modules.md"]
+    assert "_No se detectaron puntos de entrada._" in files["entrypoints.md"]
+
+
+def test_build_documentation_defaults_to_english() -> None:
+    docs = build_documentation(
+        title="Demo",
+        generated_at="t",
+        base_ref=None,
+        model=CodeModel(),
+        graph=build_module_graph(CodeModel()),
+        architecture=Architecture(),
+        entrypoints=[],
+    )
+    assert docs.language == "en"
+    by_slug = {p.slug: p for p in docs.pages}
+    assert by_slug["architecture"].title == "Architecture"
+    assert by_slug["entrypoints"].title == "Entrypoints"
+
+
+def test_build_documentation_unknown_language_falls_back_to_english() -> None:
+    docs = build_documentation(
+        title="Demo",
+        generated_at="t",
+        base_ref=None,
+        model=CodeModel(),
+        graph=build_module_graph(CodeModel()),
+        architecture=Architecture(),
+        entrypoints=[],
+        language="fr",
+    )
+    by_slug = {p.slug: p for p in docs.pages}
+    assert by_slug["architecture"].title == "Architecture"
+    # The IR records the language actually used, so renderers (e.g. the HTML
+    # `lang` attribute) never advertise a language the content is not in.
+    assert docs.language == "en"
+
+
+def test_markdown_renderer_localizes_pages_heading_for_spanish() -> None:
+    docs = build_documentation(
+        title="Demo",
+        generated_at="t",
+        base_ref=None,
+        model=CodeModel(),
+        graph=build_module_graph(CodeModel()),
+        architecture=Architecture(),
+        entrypoints=[],
+        language="es",
+    )
+    files = {f.path: f.content for f in MarkdownMermaidRenderer().render(docs)}
+    assert "## Páginas" in files["README.md"]
+
+
 def test_flows_are_transitive_across_modules() -> None:
     # web -> service (import) and service -> repo (call) should both appear in
     # the flow traced from the web entrypoint.

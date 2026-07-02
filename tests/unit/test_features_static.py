@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from codebase_architect.domain.model.entrypoint import Entrypoint, EntrypointKind
 from codebase_architect.domain.model.feature import FeatureSource
+from codebase_architect.domain.services.doc_strings import doc_strings
 from codebase_architect.domain.services.features_static import derive_static_features
 
 
@@ -39,3 +40,16 @@ def test_module_list_is_truncated() -> None:
     ]
     http = derive_static_features(eps)[0]
     assert "+3 more" in http.description
+
+
+def test_spanish_language_uses_spanish_templates() -> None:
+    eps = [
+        _ep("GreetController", EntrypointKind.HTTP_ENDPOINT, "web"),
+        _ep("main", EntrypointKind.CLI_MAIN, "cli"),
+    ]
+    features = derive_static_features(eps, strings=doc_strings("es"))
+    names = {f.name for f in features}
+    assert names == {"API HTTP", "Interfaz de línea de comandos"}
+    http = next(f for f in features if f.name == "API HTTP")
+    assert "endpoint(s) HTTP" in http.description
+    assert http.related == ("GreetController",)
