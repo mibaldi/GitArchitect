@@ -59,8 +59,12 @@ Allowed agents and the exact command each runs:
   "prompt": "…", "timeout_seconds": 600, "metadata": {} }
 ```
 
-→ `{"status":"succeeded","output":"…","stderr":"","duration_ms":1234,"exit_code":0}`
+→ `{"status":"succeeded","output":"…","stderr":"","duration_ms":1234,"exit_code":0,
+"usage":{"input_tokens":9486,"output_tokens":20}}`
 (or `"status":"failed"` with `stderr` on a non-zero exit / timeout / missing CLI).
+`usage` is filled for `claude` (run in `--output-format json` mode; requires a
+claude CLI that supports that flag) and empty for agents that do not report
+token counts. Cache read/creation tokens are counted as input.
 
 ## Reach it over Tailscale
 

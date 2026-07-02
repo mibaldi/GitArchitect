@@ -116,8 +116,18 @@ class CliRunnerProvider(AIProvider):
         if not isinstance(output, str) or not output.strip():
             raise CapabilityUnavailableError("CLI runner returned an empty output.")
 
-        # The CLI does not report token counts; report zeros (safe default).
-        return Completion(text=output, usage=TokenUsage())
+        return Completion(text=output, usage=_parse_usage(data.get("usage")))
+
+
+def _parse_usage(raw: object) -> TokenUsage:
+    """Map the runner's optional usage dict to TokenUsage (zeros when absent)."""
+    if not isinstance(raw, dict):
+        return TokenUsage()
+    def _count(key: str) -> int:
+        value = raw.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+    return TokenUsage(input_tokens=_count("input_tokens"), output_tokens=_count("output_tokens"))
 
 
 def _http_post_json(

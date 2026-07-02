@@ -65,6 +65,85 @@ def test_shared_secret_enforced(tmp_path: Path, monkeypatch) -> None:
     assert ok.status_code == 200
 
 
+def test_claude_json_output_unwrapped_with_usage(client: TestClient, tmp_path: Path) -> None:
+    envelope = (
+        '{"type":"result","is_error":false,"result":"the narrative",'
+        '"usage":{"input_tokens":9486,"output_tokens":20,"cache_read_input_tokens":33065}}'
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            runner,
+            "_run_agent",
+            lambda cmd, wd, t: RunResponse(status="succeeded", output=envelope),
+        )
+        body = client.post("/v1/run", json=_req(tmp_path)).json()
+    assert body["output"] == "the narrative"
+    # Cache reads count as consumed input: 9486 + 33065.
+    assert body["usage"] == {"input_tokens": 42551, "output_tokens": 20}
+
+
+def test_claude_non_json_output_falls_back_to_raw_text(client: TestClient, tmp_path: Path) -> None:
+    body = client.post("/v1/run", json=_req(tmp_path)).json()
+    assert body["output"] == "ok" and body["usage"] == {}
+
+
+def test_claude_json_error_result_reported_as_failed(client: TestClient, tmp_path: Path) -> None:
+    envelope = '{"type":"result","is_error":true,"result":"credit exhausted"}'
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            runner,
+            "_run_agent",
+            lambda cmd, wd, t: RunResponse(status="succeeded", output=envelope),
+        )
+        body = client.post("/v1/run", json=_req(tmp_path)).json()
+    assert body["status"] == "failed" and body["stderr"] == "credit exhausted"
+
+
+def test_claude_error_envelope_without_result_reported_as_failed(
+    client: TestClient, tmp_path: Path
+) -> None:
+    envelope = '{"type":"result","subtype":"error_during_execution","is_error":true}'
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            runner,
+            "_run_agent",
+            lambda cmd, wd, t: RunResponse(status="succeeded", output=envelope),
+        )
+        body = client.post("/v1/run", json=_req(tmp_path)).json()
+    assert body["status"] == "failed" and body["stderr"] == "agent reported an error"
+
+
+def test_claude_nonzero_exit_surfaces_envelope_error(client: TestClient, tmp_path: Path) -> None:
+    envelope = '{"type":"result","is_error":false,"result":"credit exhausted"}'
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            runner,
+            "_run_agent",
+            lambda cmd, wd, t: RunResponse(status="failed", output=envelope, exit_code=1),
+        )
+        body = client.post("/v1/run", json=_req(tmp_path)).json()
+    assert body["status"] == "failed" and body["stderr"] == "credit exhausted"
+
+
+def test_claude_non_string_result_reported_as_failed(client: TestClient, tmp_path: Path) -> None:
+    envelope = '{"type":"result","is_error":false,"result":null}'
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            runner,
+            "_run_agent",
+            lambda cmd, wd, t: RunResponse(status="succeeded", output=envelope),
+        )
+        body = client.post("/v1/run", json=_req(tmp_path)).json()
+    assert body["status"] == "failed" and body["stderr"] == "agent returned a non-text result"
+
+
+def test_envelope_usage_rejects_bools_and_negatives() -> None:
+    usage = runner._envelope_usage(
+        {"input_tokens": True, "output_tokens": -5, "cache_read_input_tokens": 100}
+    )
+    assert usage == {"input_tokens": 100, "output_tokens": 0}
+
+
 def test_run_agent_reports_failed_exit_code(tmp_path: Path, monkeypatch) -> None:
     class _Proc:
         returncode = 1

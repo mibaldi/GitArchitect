@@ -19,6 +19,7 @@ Run it:
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -29,8 +30,9 @@ from pydantic import BaseModel
 
 # agent -> argv builder. The prompt is always a single, separate argv element
 # (never a shell string), so the client cannot inject extra commands.
+# claude runs in JSON mode so we can report token usage alongside the text.
 _AGENTS: dict[str, list[str]] = {
-    "claude": ["claude", "--print"],
+    "claude": ["claude", "--print", "--output-format", "json"],
     "codex": ["codex", "exec"],
 }
 
@@ -52,6 +54,7 @@ class RunResponse(BaseModel):
     stderr: str = ""
     duration_ms: int = 0
     exit_code: int = 0
+    usage: dict[str, int] = {}  # {"input_tokens": N, "output_tokens": M} when known
 
 
 @app.get("/health")
@@ -67,7 +70,10 @@ def run(req: RunRequest, authorization: str | None = Header(default=None)) -> Ru
     working_dir = _resolve_dir(req.working_dir)
     timeout = req.timeout_seconds or _default_timeout()
     cmd = [*_AGENTS[req.agent], req.prompt]
-    return _run_agent(cmd, working_dir, timeout)
+    response = _run_agent(cmd, working_dir, timeout)
+    if req.agent == "claude":
+        response = _parse_claude_json(response)
+    return response
 
 
 def _run_agent(cmd: list[str], working_dir: str, timeout: int) -> RunResponse:
@@ -92,6 +98,52 @@ def _run_agent(cmd: list[str], working_dir: str, timeout: int) -> RunResponse:
         duration_ms=_ms(started),
         exit_code=proc.returncode,
     )
+
+
+def _parse_claude_json(response: RunResponse) -> RunResponse:
+    """Unwrap a `claude --output-format json` envelope: text, errors, token usage.
+
+    Falls back to the raw output when stdout is not the expected envelope, so a
+    CLI that ignores the flag still works (just without usage numbers).
+    """
+    try:
+        data = json.loads(response.output)
+    except ValueError:
+        return response
+    if not isinstance(data, dict) or data.get("type") != "result":
+        return response
+    result = data.get("result")
+    result_text = result if isinstance(result, str) else ""
+    if data.get("is_error") or response.exit_code != 0:
+        stderr = response.stderr or result_text or "agent reported an error"
+        return response.model_copy(update={"status": "failed", "stderr": stderr[:4000]})
+    if not isinstance(result, str):
+        return response.model_copy(
+            update={"status": "failed", "stderr": "agent returned a non-text result"}
+        )
+    return response.model_copy(
+        update={"output": result, "usage": _envelope_usage(data.get("usage"))}
+    )
+
+
+def _envelope_usage(raw: object) -> dict[str, int]:
+    """Token counts from the envelope; cache reads/writes count as input."""
+    if not isinstance(raw, dict):
+        return {}
+
+    def count(key: str) -> int:
+        value = raw.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+    input_tokens = (
+        count("input_tokens")
+        + count("cache_creation_input_tokens")
+        + count("cache_read_input_tokens")
+    )
+    output_tokens = count("output_tokens")
+    if not input_tokens and not output_tokens:
+        return {}
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens}
 
 
 def _check_auth(authorization: str | None) -> None:

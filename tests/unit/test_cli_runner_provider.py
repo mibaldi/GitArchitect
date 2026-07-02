@@ -61,12 +61,37 @@ def test_success_returns_completion_and_posts_expected_payload(captured) -> None
     provider = CliRunnerProvider(base_url="http://host:8787", agent="claude", working_dir="/dev/p")
     completion = provider.complete(system="SYS", prompt="PROMPT")
     assert completion.text == "hello from claude"
-    assert completion.usage.total == 0  # CLI reports no token usage
+    assert completion.usage.total == 0  # runner sent no usage
     assert captured["url"] == "http://host:8787/v1/run"
     assert captured["payload"]["agent"] == "claude"
     assert captured["payload"]["working_dir"] == "/dev/p"
     assert "PROMPT" in captured["payload"]["prompt"]
     assert "Authorization" not in captured["headers"]  # no secret configured
+
+
+def test_runner_usage_mapped_to_token_usage(captured) -> None:
+    captured["status"] = 200
+    captured["body"] = json.dumps(
+        {
+            "status": "succeeded",
+            "output": "narrative",
+            "exit_code": 0,
+            "usage": {"input_tokens": 9486, "output_tokens": 20},
+        }
+    )
+    provider = CliRunnerProvider(base_url="http://host:8787")
+    completion = provider.complete(system="", prompt="hi")
+    assert completion.usage.input_tokens == 9486
+    assert completion.usage.output_tokens == 20
+
+
+def test_malformed_usage_defaults_to_zero(captured) -> None:
+    captured["status"] = 200
+    captured["body"] = json.dumps(
+        {"status": "succeeded", "output": "n", "usage": {"input_tokens": "x", "output_tokens": -5}}
+    )
+    provider = CliRunnerProvider(base_url="http://host:8787")
+    assert provider.complete(system="", prompt="hi").usage.total == 0
 
 
 def test_shared_secret_sets_bearer_header(captured) -> None:
